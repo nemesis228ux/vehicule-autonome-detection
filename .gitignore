@@ -1,0 +1,84 @@
+# =========================
+# Python
+# =========================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Environnements virtuels
+venv/
+env/
+ENV/
+.venv/
+.env/
+
+# =========================
+# IDE / Éditeurs
+# =========================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+
+
+# =========================
+# Données et médias (lourds)
+# =========================
+data/videos/*
+!data/videos/.gitkeep
+data/images/*
+!data/images/.gitkeep
+outputs/*
+!outputs/.gitkeep
+
+# Modèles YOLO (trop lourds pour GitHub)
+models/*.pt
+models/*.onnx
+models/*.engine
+!models/.gitkeep
+
+# =========================
+# Fichiers système
+# =========================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# =========================
+# Logs et temporaires
+# =========================
+*.log
+*.tmp
+*.temp
+runs/
+wandb/
+
+# =========================
+# Secrets / Config locale
+# =========================
+.env
+.env.local
+config.local.py
+secrets.json

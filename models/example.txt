@@ -1,0 +1,1 @@
+Modèles YOLO (si on en télécharge ou entraîne)
