@@ -41,7 +41,7 @@ vehicule-autonome-detection/
 ├── models/              # Modèles YOLO (.pt)
 │
 ├── src/
-│   ├── video_reader.py  # Lecture vidéo / webcam et fourniture des images
+│   ├── video_reader.py  # Lecture vidéo / webcam
 │   ├── detector.py      # Détection avec YOLO
 │   ├── tracker.py       # Suivi des objets
 │   ├── risk_evaluator.py# Évaluation du danger
@@ -104,25 +104,6 @@ vehicule-autonome-detection/
 ---
 
 ## 5. Lancement du programme
-
-### Utiliser directement le lecteur vidéo
-
-Le lecteur fournit les images au format BGR utilisé par OpenCV. Il accepte un chemin
-de fichier, une URL de flux vidéo ou un identifiant de caméra :
-
-```python
-from src.video_reader import VideoReader
-
-with VideoReader("data/videos/lome.mp4") as reader:
-    print(f"Résolution : {reader.frame_width}x{reader.frame_height}")
-    for frame in reader:
-        # Transmettre frame au détecteur ou à l'affichage OpenCV
-        pass
-```
-
-La lecture d'un fichier s'arrête à la fin de la vidéo. Une caméra ou un flux en direct
-qui ne peut plus fournir d'image déclenche une erreur ; le lecteur libère la ressource
-à la fin de l'itération ou à la sortie du bloc `with`.
 
 ### Détection sur une vidéo
 ```bash
