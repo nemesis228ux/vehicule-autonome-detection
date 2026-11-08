@@ -12,9 +12,11 @@ import cv2
 
 try:
     from src.video_reader import VideoReader
+    from src.window_utils import fit_window, is_window_open
 except ModuleNotFoundError:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     from src.video_reader import VideoReader
+    from src.window_utils import fit_window, is_window_open
 
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
@@ -28,8 +30,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--window",
-        default="Test du lecteur vidéo",
-        help="Nom de la fenêtre OpenCV.",
+        default="Test du lecteur video",
+        help="Nom ASCII de la fenêtre OpenCV (éviter les accents).",
     )
     parser.add_argument(
         "--show-fps",
@@ -42,6 +44,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
 def run(source: str, window: str, show_fps: bool) -> int:
     delay = 1
     smoothed_fps = 0.0
+    window_seen = False
     previous_time = time.perf_counter()
 
     try:
@@ -52,6 +55,11 @@ def run(source: str, window: str, show_fps: bool) -> int:
             if not reader.is_live and reader.fps > 0:
                 delay = max(1, round(1000 / reader.fps))
                 print(f"FPS source   : {reader.fps:.1f}")
+
+            print("Appuyez sur q ou Échap pour quitter.")
+            cv2.namedWindow(window, cv2.WINDOW_NORMAL)
+            if reader.frame_width > 0 and reader.frame_height > 0:
+                fit_window(window, reader.frame_width, reader.frame_height)
 
             try:
                 for frame in reader:
@@ -82,7 +90,10 @@ def run(source: str, window: str, show_fps: bool) -> int:
                     key = cv2.waitKey(delay) & 0xFF
                     if key in (ord("q"), 27):
                         break
-                    if cv2.getWindowProperty(window, cv2.WND_PROP_VISIBLE) < 1:
+
+                    if is_window_open(window):
+                        window_seen = True
+                    elif window_seen:
                         break
             except OSError as exc:
                 print(f"Lecture interrompue : {exc}", file=sys.stderr)
