@@ -44,6 +44,7 @@ class Detection:
     class_id: int
     class_name: str
     category: str
+    track_id: Optional[int] = None
 
     @property
     def width(self) -> int:
@@ -99,6 +100,7 @@ class Detector:
         self.device = device
         self.class_map = dict(ROAD_CLASS_MAP if class_map is None else class_map)
         self.model = model if model is not None else self._load_model()
+        self.class_ids = self._resolve_class_ids()
 
     @staticmethod
     def _resolve_model_name(model_name: str) -> str:
@@ -125,6 +127,22 @@ class Detector:
 
         return YOLO(self.model_name)
 
+    def _resolve_class_ids(self) -> Optional[List[int]]:
+        if not self.road_only:
+            return None
+
+        names = getattr(self.model, "names", None)
+        if not names:
+            return None
+
+        items = names.items() if isinstance(names, dict) else enumerate(names)
+        class_ids = [
+            int(class_id)
+            for class_id, name in items
+            if str(name) in self.class_map
+        ]
+        return sorted(set(class_ids)) or None
+
     def detect(self, frame: np.ndarray) -> List[Detection]:
         """Détecte les objets d'une frame BGR et renvoie les objets retenus."""
         if frame is None or frame.size == 0:
@@ -139,13 +157,51 @@ class Detector:
         }
         if self.device is not None:
             kwargs["device"] = self.device
+        if self.class_ids is not None:
+            kwargs["classes"] = self.class_ids
 
         results = self.model(frame, **kwargs)
         height, width = frame.shape[:2]
         return self._parse_results(results, width, height)
 
+    def track(
+        self, frame: np.ndarray, tracker: str = "bytetrack.yaml"
+    ) -> List[Detection]:
+        """Détecte et suit les objets d'une frame, avec un ``track_id`` stable.
+
+        Les détections de faible confiance sont conservées : ByteTrack en a
+        besoin pour maintenir les IDs. Le filtrage d'affichage est assuré par
+        :class:`src.tracker.Tracker`.
+        """
+        if frame is None or frame.size == 0:
+            raise ValueError("La frame est vide.")
+
+        kwargs: Dict[str, Any] = {
+            "persist": True,
+            "tracker": tracker,
+            "conf": 0.1,
+            "iou": self.iou_threshold,
+            "max_det": self.max_detections,
+            "imgsz": self.imgsz,
+            "verbose": False,
+        }
+        if self.device is not None:
+            kwargs["device"] = self.device
+        if self.class_ids is not None:
+            kwargs["classes"] = self.class_ids
+
+        results = self.model.track(frame, **kwargs)
+        height, width = frame.shape[:2]
+        return self._parse_results(
+            results, width, height, min_confidence=0.0
+        )
+
     def _parse_results(
-        self, results: Any, frame_width: int, frame_height: int
+        self,
+        results: Any,
+        frame_width: int,
+        frame_height: int,
+        min_confidence: Optional[float] = None,
     ) -> List[Detection]:
         if not results:
             return []
@@ -160,10 +216,23 @@ class Detector:
         class_ids = self._to_numpy(boxes.cls)
         names = getattr(result, "names", None) or getattr(self.model, "names", {})
 
+        threshold = (
+            self.confidence_threshold
+            if min_confidence is None
+            else min_confidence
+        )
+
+        raw_ids = getattr(boxes, "id", None)
+        track_ids = (
+            self._to_numpy(raw_ids).reshape(-1) if raw_ids is not None else None
+        )
+
         detections: List[Detection] = []
-        for coords, confidence, class_id in zip(xyxy, confidences, class_ids):
+        for index, (coords, confidence, class_id) in enumerate(
+            zip(xyxy, confidences, class_ids)
+        ):
             confidence_value = float(confidence)
-            if confidence_value < self.confidence_threshold:
+            if confidence_value < threshold:
                 continue
 
             class_id_value = int(class_id)
@@ -175,6 +244,10 @@ class Detector:
                 category = "autre"
 
             x1, y1, x2, y2 = coords[:4]
+            track_id: Optional[int] = None
+            if track_ids is not None and index < len(track_ids):
+                track_id = int(round(float(track_ids[index])))
+
             detections.append(
                 Detection(
                     x1=self._clamp(x1, frame_width),
@@ -185,6 +258,7 @@ class Detector:
                     class_id=class_id_value,
                     class_name=class_name,
                     category=category,
+                    track_id=track_id,
                 )
             )
             if len(detections) >= self.max_detections:

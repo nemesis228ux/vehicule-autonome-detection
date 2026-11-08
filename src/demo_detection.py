@@ -12,11 +12,13 @@ import cv2
 
 try:
     from src.detector import Detector, draw_detections
+    from src.tracker import Tracker, draw_tracks
     from src.video_reader import VideoReader
     from src.window_utils import fit_window, is_window_open
 except ModuleNotFoundError:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     from src.detector import Detector, draw_detections
+    from src.tracker import Tracker, draw_tracks
     from src.video_reader import VideoReader
     from src.window_utils import fit_window, is_window_open
 
@@ -57,6 +59,34 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         "--show-fps", action="store_true", help="Affiche les FPS mesurés."
     )
     parser.add_argument(
+        "--track",
+        action="store_true",
+        help="Active le suivi ByteTrack et affiche les IDs.",
+    )
+    parser.add_argument(
+        "--tracker",
+        default="bytetrack.yaml",
+        help="Configuration Ultralytics du tracker (bytetrack.yaml ou botsort.yaml).",
+    )
+    parser.add_argument(
+        "--labels",
+        choices=("full", "id", "none"),
+        default="id",
+        help="Étiquettes de tracking : full (ID+catégorie+conf), id seul, ou aucune.",
+    )
+    parser.add_argument(
+        "--trail-length",
+        type=int,
+        default=30,
+        help="Nombre de points de trajectoire conservés par objet.",
+    )
+    parser.add_argument(
+        "--max-age",
+        type=int,
+        default=30,
+        help="Frames sans détection avant purge de l'état local d'un ID.",
+    )
+    parser.add_argument(
         "--window",
         default="Detection YOLOv8",
         help="Nom ASCII de la fenêtre OpenCV (éviter les accents).",
@@ -67,6 +97,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
 def run(args: argparse.Namespace) -> int:
     writer: Optional[cv2.VideoWriter] = None
     output_path: Optional[Path] = None
+    tracker: Optional[Tracker] = None
+    tracked_ids: set[int] = set()
     delay = 1
     smoothed_fps = 0.0
     frame_count = 0
@@ -83,9 +115,19 @@ def run(args: argparse.Namespace) -> int:
             road_only=not args.all_classes,
         )
 
+        if args.track:
+            tracker = Tracker(
+                detector,
+                tracker_config=args.tracker,
+                trail_length=args.trail_length,
+                max_age=args.max_age,
+            )
+
         with VideoReader(args.source) as reader:
             print(f"Source     : {args.source}")
             print(f"Modèle     : {args.model}")
+            if tracker is not None:
+                print(f"Tracking   : {args.tracker}")
             print(f"Résolution : {reader.frame_width}x{reader.frame_height}")
             if not reader.is_live and reader.fps > 0:
                 delay = max(1, round(1000 / reader.fps))
@@ -104,7 +146,8 @@ def run(args: argparse.Namespace) -> int:
                 source_name = (
                     Path(str(args.source)).stem if not reader.is_live else "direct"
                 )
-                output_path = output_dir / f"{source_name}_detecte.mp4"
+                suffix = "_tracke" if tracker is not None else "_detecte"
+                output_path = output_dir / f"{source_name}{suffix}.mp4"
                 writer = cv2.VideoWriter(
                     str(output_path),
                     cv2.VideoWriter_fourcc(*"mp4v"),
@@ -118,8 +161,13 @@ def run(args: argparse.Namespace) -> int:
 
             for frame in reader:
                 frame_count += 1
-                detections = detector.detect(frame)
-                draw_detections(frame, detections)
+                if tracker is not None:
+                    objects = tracker.update(frame)
+                    tracked_ids.update(obj.track_id for obj in objects)
+                    draw_tracks(frame, objects, labels=args.labels)
+                else:
+                    detections = detector.detect(frame)
+                    draw_detections(frame, detections)
 
                 now = time.perf_counter()
                 elapsed = now - previous_time
@@ -161,6 +209,8 @@ def run(args: argparse.Namespace) -> int:
                 f"{frame_count} frames traités en "
                 f"{time.perf_counter() - start_time:.1f}s"
             )
+            if tracker is not None:
+                print(f"IDs suivis : {len(tracked_ids)}")
     except (ImportError, OSError, ValueError) as exc:
         print(f"Erreur : {exc}", file=sys.stderr)
         return 1
