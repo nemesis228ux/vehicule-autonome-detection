@@ -118,53 +118,145 @@ vehicule-autonome-detection/
 
 ---
 
-## 5. Lancement du programme
+## 5. Lancer la démonstration réelle
 
-Le point d'entrée de la démonstration complète est `src/demo_detection.py`.
-Les commandes ci-dessous sont à lancer depuis la racine du projet.
+Le point d'entrée est `src/demo_detection.py`. Il enchaîne :
 
-### Détection sur une vidéo
-```bash
-python -m src.demo_detection --source data/videos/votre_video.mp4
+```text
+VideoReader -> Detector YOLOv8 -> Tracker ByteTrack
+            -> RiskEvaluator -> AlertManager
+            -> HUD/overlay -> fenêtre OpenCV
 ```
 
-### Détection en direct (webcam ou téléphone via DroidCam / Iriun)
-```bash
-python -m src.demo_detection --source 0
-```
-> **Note :** `0` correspond généralement à la webcam par défaut. Si vous utilisez DroidCam ou Iriun, le numéro peut être différent (`1`, `2`, etc.).
+La fenêtre affiche la vidéo annotée : cadres, IDs, trajectoires, HUD de risque, bordures d'alerte et FPS.
 
-Un fichier vidéo, un identifiant de caméra ou une URL de flux peuvent être fournis avec `--source`.
+### 5.1 Activer l'environnement
 
-### Suivi, risque et alertes
-```bash
-# Activer le suivi ByteTrack et afficher les identifiants
-python -m src.demo_detection --source data/videos/votre_video.mp4 --track
+Depuis la racine du projet, sous Windows PowerShell :
 
-# Évaluer le risque et afficher le HUD (active aussi le suivi)
-python -m src.demo_detection --source data/videos/votre_video.mp4 --risk
-
-# Activer les alertes visuelles et le klaxon (active le suivi et le risque)
-python -m src.demo_detection --source data/videos/votre_video.mp4 --alerts
-
-# Alertes visuelles seules, sans klaxon
-python -m src.demo_detection --source data/videos/votre_video.mp4 --alerts --no-sound
-
-# Sauvegarder la vidéo annotée et afficher les FPS
-python -m src.demo_detection --source data/videos/votre_video.mp4 --alerts --save --show-fps
-
-# Utiliser un autre modèle ou accélérer l'inférence sur CPU
-python -m src.demo_detection --source 0 --model yolov8n.pt --imgsz 320
+```powershell
+cd "D:\mak\IAI 3 EME ANNEE\COURS\BIG DATA\DEV BIG DATA\vehicule-autonome-detection"
+.venv\Scripts\Activate.ps1
 ```
 
-Pendant l'exécution :
+Vérification rapide des dépendances :
+
+```powershell
+python -c "import cv2, ultralytics, numpy; print('OK')"
+python -m unittest discover -s tests -v
+```
+
+### 5.2 Vérifier le modèle YOLO
+
+Le modèle local attendu est :
+
+```text
+models\yolov8n.pt
+```
+
+Les poids ne sont pas versionnés par Git (`.gitignore`). S'ils sont absents, Ultralytics peut télécharger `yolov8n.pt` au premier lancement. Pour imposer un autre modèle :
+
+```powershell
+python -m src.demo_detection --source data/videos/s.mp4 --model models\best.pt
+```
+
+### 5.3 Fournir la vidéo
+
+Place ta vidéo dans `data\videos\`. Ce dossier est ignoré par Git : chaque machine doit fournir sa propre vidéo.
+
+```text
+data\videos\s.mp4
+```
+
+> `s.mp4` est un triptyque de trois scènes empilées : la démo fonctionne, mais les objets reçoivent trois IDs et le risque sature souvent en Critique. Pour un test réaliste, utilise une vidéo dashcam normale.
+
+### 5.4 Commande minimale
+
+```powershell
+python -m src.demo_detection --source data/videos/s.mp4 --imgsz 320
+```
+
+Tu dois voir :
+
+- une fenêtre OpenCV avec la vidéo ;
+- des cadres colorés autour des objets détectés ;
+- les catégories et scores de confiance ;
+- la console avec `Source`, `Modèle`, `Résolution` et le nombre de frames traitées.
+
+### 5.5 Démonstration complète
+
+```powershell
+python -m src.demo_detection --source data/videos/s.mp4 --alerts --show-fps --imgsz 320
+```
+
+Tu dois voir en plus :
+
+- les IDs ByteTrack et les trajectoires ;
+- le HUD `INFORMATION / ATTENTION / CRITIQUE` ;
+- le panneau des niveaux et la légende ;
+- la bordure orange ou rouge selon le danger ;
+- le klaxon d'attention ou le triple klaxon critique ;
+- les FPS en haut de la fenêtre.
+
+Commandes pendant l'exécution :
+
 - `q` ou Échap : quitter ;
 - `m` : couper/réactiver le son.
 
-Les vidéos créées avec `--save` sont enregistrées dans `outputs/` (`*_alertes.mp4` avec `--alerts`).
-Pour tester uniquement la lecture d'une source vidéo, utilisez `python -m src.demo_video --source 0`.
+### 5.6 Options utiles de `demo_detection`
 
-### Fichiers audio
+| Option | Effet |
+|---|---|
+| `--source` | Fichier vidéo, caméra (`0`, `1`, ...) ou URL de flux |
+| `--model` | Modèle Ultralytics ou chemin `.pt` |
+| `--conf` | Seuil de confiance (baisser à `0.10` si peu de détections) |
+| `--imgsz` | Taille d'inférence (`320` plus rapide sur CPU) |
+| `--track` | Active ByteTrack et les IDs |
+| `--risk` | Active le risque et le HUD (implique `--track`) |
+| `--alerts` | Active les alertes visuelles et sonores (implique `--risk`) |
+| `--no-sound` | Garde les alertes visuelles sans klaxon |
+| `--save` | Enregistre la vidéo annotée dans `outputs/` |
+| `--show-fps` | Affiche les FPS |
+| `--labels` | `full`, `id` ou `none` |
+| `--trail-length` | Nombre de points de trajectoire |
+| `--max-age` | Frames avant purge d'un ID perdu |
+
+Exemples :
+
+```powershell
+# Suivi seul
+python -m src.demo_detection --source data/videos/s.mp4 --track --imgsz 320
+
+# Risque seul
+python -m src.demo_detection --source data/videos/s.mp4 --risk --imgsz 320
+
+# Alertes visuelles sans son
+python -m src.demo_detection --source data/videos/s.mp4 --alerts --no-sound --imgsz 320
+
+# Sauvegarde de la vidéo annotée
+python -m src.demo_detection --source data/videos/s.mp4 --alerts --save --show-fps --imgsz 320
+```
+
+La sauvegarde produit `outputs\s_alertes.mp4` (ou `s_risque.mp4`, `s_tracke.mp4` selon les options).
+
+### 5.7 Webcam
+
+```powershell
+python -m src.demo_detection --source 0 --alerts --imgsz 320
+```
+
+`0` correspond généralement à la webcam par défaut. Avec DroidCam/Iriun, essayer `1`, `2`, etc.
+
+### 5.8 Dépannage
+
+- **Aucune fenêtre** : lancer la commande dans une session Windows avec affichage, pas dans un terminal sans GUI.
+- **Aucun cadre** : baisser `--conf 0.10`, essayer `--all-classes`, vérifier `--model` et `--source`.
+- **Trop lent** : garder `yolov8n.pt` et `--imgsz 320`.
+- **Pas de son** : vérifier la présence des MP3 dans `assets\sounds\`, le volume Windows, et que `--no-sound` n'est pas actif.
+- **Trop d'alertes** : normal sur `s.mp4` (triptyque) ; tester sur une vraie vidéo dashcam.
+
+### 5.9 Fichiers audio
+
 Placez les klaxons dans `assets/sounds/` :
 
 - `klaxon_attention.mp3` : klaxon d'attention (prioritaire).
@@ -172,11 +264,12 @@ Placez les klaxons dans `assets/sounds/` :
 
 Les MP3 sont lus via **MCI Windows**, de façon asynchrone. Si un MP3 est absent, le WAV correspondant (`klaxon_attention.wav`, `klaxon_critique.wav`) sert de secours. Ces WAV peuvent être régénérés avec :
 
-```bash
+```powershell
 python scripts/generate_horn.py
 ```
 
-### Comportement des alertes
+### 5.10 Comportement des alertes
+
 - **Information** : aucun son, aucune bordure d'alerte.
 - **Attention** : bordure orange stable + un coup de klaxon, avec rappel espacé.
 - **Critique** : bordure rouge clignotante + triple klaxon, avec rappel plus fréquent.
@@ -229,10 +322,36 @@ Placez vos vidéos dans le dossier `data/videos/`.
 
 ## 9. Tests
 
-Depuis la racine du projet, exécutez les tests avec :
+Les tests sont unitaires et ne nécessitent ni vidéo ni modèle : ils utilisent des objets simulés et un faux backend audio. Exécutez-les depuis la racine du projet, avec l'environnement virtuel activé.
+
+### Sous Windows PowerShell
+
+```powershell
+cd "D:\mak\IAI 3 EME ANNEE\COURS\BIG DATA\DEV BIG DATA\vehicule-autonome-detection"
+.venv\Scripts\Activate.ps1
+python -m unittest discover -s tests -v
+```
+
+### Sous Linux / macOS
 
 ```bash
+cd vehicule-autonome-detection
+source .venv/bin/activate
 python -m unittest discover -s tests -v
+```
+
+### Lancer un fichier ou un test précis
+
+```powershell
+python -m unittest tests.test_alerts -v
+python -m unittest tests.test_alerts.AlertManagerTests.test_critical_is_immediate -v
+```
+
+### Résultat attendu
+
+```text
+Ran 79 tests in ...
+OK
 ```
 
 La suite couvre :
