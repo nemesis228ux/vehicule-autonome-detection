@@ -12,12 +12,16 @@ import cv2
 
 try:
     from src.detector import Detector, draw_detections
+    from src.hud import draw_risk_hud
+    from src.risk_evaluator import DANGER_LABELS, DangerLevel, RiskEvaluator
     from src.tracker import Tracker, draw_tracks
     from src.video_reader import VideoReader
     from src.window_utils import fit_window, is_window_open
 except ModuleNotFoundError:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     from src.detector import Detector, draw_detections
+    from src.hud import draw_risk_hud
+    from src.risk_evaluator import DANGER_LABELS, DangerLevel, RiskEvaluator
     from src.tracker import Tracker, draw_tracks
     from src.video_reader import VideoReader
     from src.window_utils import fit_window, is_window_open
@@ -64,6 +68,11 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="Active le suivi ByteTrack et affiche les IDs.",
     )
     parser.add_argument(
+        "--risk",
+        action="store_true",
+        help="Active l'évaluation du danger et le HUD (implique --track).",
+    )
+    parser.add_argument(
         "--tracker",
         default="bytetrack.yaml",
         help="Configuration Ultralytics du tracker (bytetrack.yaml ou botsort.yaml).",
@@ -91,14 +100,20 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         default="Detection YOLOv8",
         help="Nom ASCII de la fenêtre OpenCV (éviter les accents).",
     )
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if args.risk:
+        args.track = True
+    return args
 
 
 def run(args: argparse.Namespace) -> int:
     writer: Optional[cv2.VideoWriter] = None
     output_path: Optional[Path] = None
     tracker: Optional[Tracker] = None
+    risk_evaluator: Optional[RiskEvaluator] = None
     tracked_ids: set[int] = set()
+    highest_level = DangerLevel.INFORMATION
+    critical_frames = 0
     delay = 1
     smoothed_fps = 0.0
     frame_count = 0
@@ -122,12 +137,16 @@ def run(args: argparse.Namespace) -> int:
                 trail_length=args.trail_length,
                 max_age=args.max_age,
             )
+        if args.risk:
+            risk_evaluator = RiskEvaluator()
 
         with VideoReader(args.source) as reader:
             print(f"Source     : {args.source}")
             print(f"Modèle     : {args.model}")
             if tracker is not None:
                 print(f"Tracking   : {args.tracker}")
+            if risk_evaluator is not None:
+                print("Danger     : actif")
             print(f"Résolution : {reader.frame_width}x{reader.frame_height}")
             if not reader.is_live and reader.fps > 0:
                 delay = max(1, round(1000 / reader.fps))
@@ -146,7 +165,12 @@ def run(args: argparse.Namespace) -> int:
                 source_name = (
                     Path(str(args.source)).stem if not reader.is_live else "direct"
                 )
-                suffix = "_tracke" if tracker is not None else "_detecte"
+                if risk_evaluator is not None:
+                    suffix = "_risque"
+                elif tracker is not None:
+                    suffix = "_tracke"
+                else:
+                    suffix = "_detecte"
                 output_path = output_dir / f"{source_name}{suffix}.mp4"
                 writer = cv2.VideoWriter(
                     str(output_path),
@@ -161,13 +185,13 @@ def run(args: argparse.Namespace) -> int:
 
             for frame in reader:
                 frame_count += 1
+                objects = None
+                detections = None
                 if tracker is not None:
                     objects = tracker.update(frame)
                     tracked_ids.update(obj.track_id for obj in objects)
-                    draw_tracks(frame, objects, labels=args.labels)
                 else:
                     detections = detector.detect(frame)
-                    draw_detections(frame, detections)
 
                 now = time.perf_counter()
                 elapsed = now - previous_time
@@ -180,7 +204,27 @@ def run(args: argparse.Namespace) -> int:
                         else 0.9 * smoothed_fps + 0.1 * instant_fps
                     )
 
-                if args.show_fps:
+                if objects is not None and risk_evaluator is not None:
+                    summary = risk_evaluator.evaluate(
+                        objects, frame.shape, reader.fps or 25.0
+                    )
+                    if summary.level > highest_level:
+                        highest_level = summary.level
+                    if summary.level == DangerLevel.CRITIQUE:
+                        critical_frames += 1
+                    draw_risk_hud(
+                        frame,
+                        objects,
+                        summary,
+                        fps=smoothed_fps if args.show_fps else None,
+                        frame_index=frame_count,
+                    )
+                elif objects is not None:
+                    draw_tracks(frame, objects, labels=args.labels)
+                else:
+                    draw_detections(frame, detections)
+
+                if args.show_fps and risk_evaluator is None:
                     cv2.putText(
                         frame,
                         f"FPS {smoothed_fps:5.1f}",
@@ -211,6 +255,9 @@ def run(args: argparse.Namespace) -> int:
             )
             if tracker is not None:
                 print(f"IDs suivis : {len(tracked_ids)}")
+            if risk_evaluator is not None:
+                print(f"Niveau max : {DANGER_LABELS[highest_level]}")
+                print(f"Frames critiques : {critical_frames}")
     except (ImportError, OSError, ValueError) as exc:
         print(f"Erreur : {exc}", file=sys.stderr)
         return 1

@@ -17,11 +17,14 @@ Ce projet développe un système de perception capable de détecter en temps ré
 
 ### Fonctionnalités
 1. Détection d'objets avec **YOLOv8**
-2. Tracking des objets dans le temps
-3. Évaluation du niveau de danger (*Critique / Attention / Information*)
-4. Alertes visuelles et sonores différenciées
+2. Lecture de vidéos, de caméras et de flux réseau
+3. Suivi des objets avec **ByteTrack** : identifiants, vitesse et trajectoire
+4. Évaluation monoculaire du risque (*Critique / Attention / Information*)
+5. Affichage des détections, du suivi et du niveau de risque dans une fenêtre OpenCV
 
 Le système illustre la première brique d'un véhicule autonome (**la Perception**) et met en avant les défis spécifiques aux routes africaines (nids-de-poule, forte présence de deux-roues, signalisation limitée, etc.).
+
+> L'évaluation du risque est une estimation visuelle à partir des images, et non une mesure réelle de distance ou une garantie de sécurité. Les alertes actuellement implémentées sont visuelles ; aucune alerte sonore n'est intégrée.
 
 ---
 
@@ -35,20 +38,23 @@ vehicule-autonome-detection/
 ├── .gitignore
 │
 ├── data/
-│   ├── videos/          # Vidéos de test (Lomé, routes dégradées, etc.)
-│   └── images/          # Images de test (optionnel)
+│   ├── videos/          # Vidéos de test
+│   └── images/          # Images de test
 │
-├── models/              # Modèles YOLO (.pt)
+├── models/              # Modèles YOLO (.pt), dont yolov8n.pt
 │
 ├── src/
-│   ├── video_reader.py  # Lecture vidéo / webcam
-│   ├── detector.py      # Détection avec YOLO
-│   ├── tracker.py       # Suivi des objets
-│   ├── risk_evaluator.py# Évaluation du danger
-│   ├── alerts.py        # Alertes visuelles + sonores
-│   └── main.py          # Point d'entrée principal
+│   ├── demo_detection.py # Point d'entrée : détection, suivi et risque
+│   ├── demo_video.py     # Démonstration du lecteur vidéo seul
+│   ├── video_reader.py   # Lecture vidéo, caméra et flux
+│   ├── detector.py       # Détection avec YOLOv8
+│   ├── tracker.py        # Suivi ByteTrack, vitesse et trajectoire
+│   ├── risk_evaluator.py # Évaluation du danger
+│   ├── hud.py            # Affichage du niveau de risque
+│   └── window_utils.py   # Adaptation de la fenêtre à l'écran
 │
-└── outputs/             # Résultats (vidéos annotées, captures)
+├── tests/                # Tests unitaires
+└── outputs/              # Vidéos annotées générées avec --save
 ```
 
 ---
@@ -59,10 +65,10 @@ vehicule-autonome-detection/
 | :--- | :--- |
 | **Python 3.9+** | Langage principal |
 | **Ultralytics YOLOv8** | Détection d'objets |
+| **ByteTrack** | Suivi des objets entre les images |
 | **OpenCV** | Lecture vidéo, affichage, dessin |
 | **NumPy** | Calculs numériques |
-| **Pillow** | Gestion d'images |
-| **playsound** ou **pygame** | Alertes sonores |
+| **lap** | Association utilisée par le suivi |
 
 ---
 
@@ -105,35 +111,51 @@ vehicule-autonome-detection/
 
 ## 5. Lancement du programme
 
+Le point d'entrée de la démonstration complète est `src/demo_detection.py`.
+Les commandes ci-dessous sont à lancer depuis la racine du projet.
+
 ### Détection sur une vidéo
 ```bash
-python src/main.py --source data/videos/votre_video.mp4
+python -m src.demo_detection --source data/videos/votre_video.mp4
 ```
 
 ### Détection en direct (webcam ou téléphone via DroidCam / Iriun)
 ```bash
-python src/main.py --source 0
+python -m src.demo_detection --source 0
 ```
 > **Note :** `0` correspond généralement à la webcam par défaut. Si vous utilisez DroidCam ou Iriun, le numéro peut être différent (`1`, `2`, etc.).
 
-### Options utiles (exemples)
-```bash
-# Sauvegarder la vidéo annotée
-python src/main.py --source data/videos/lome.mp4 --save
+Un fichier vidéo, un identifiant de caméra ou une URL de flux peuvent être fournis avec `--source`.
 
-# Afficher les FPS
-python src/main.py --source data/videos/lome.mp4 --show-fps
+### Suivi et évaluation du risque
+```bash
+# Activer le suivi ByteTrack et afficher les identifiants
+python -m src.demo_detection --source data/videos/votre_video.mp4 --track
+
+# Évaluer le risque et afficher le HUD (active aussi le suivi)
+python -m src.demo_detection --source data/videos/votre_video.mp4 --risk
+
+# Sauvegarder la vidéo annotée et afficher les FPS
+python -m src.demo_detection --source data/videos/votre_video.mp4 --risk --save --show-fps
+
+# Utiliser un autre modèle ou accélérer l'inférence sur CPU
+python -m src.demo_detection --source 0 --model yolov8n.pt --imgsz 320
 ```
+
+Les vidéos créées avec `--save` sont enregistrées dans `outputs/`. Quittez la fenêtre avec `q` ou Échap.
+Pour tester uniquement la lecture d'une source vidéo, utilisez `python -m src.demo_video --source 0`.
 
 ---
 
-## 6. Niveaux d'alerte
+## 6. Niveaux de risque
 
 | Niveau | Couleur | Signification | Exemple |
 | :--- | :---: | :--- | :--- |
-| **Critique** | 🔴 Rouge | Danger immédiat | Piéton ou moto très proche |
-| **Attention** | 🟠 Orange | Situation à surveiller | Nid-de-poule devant, objet moyen |
-| **Information** | 🟢 Vert / 🔵 Bleu | Présence détectée mais non urgente | Objets loin ou sur les côtés |
+| **Critique** | 🔴 Rouge | Risque élevé dans la trajectoire | Objet proche ou temps avant collision estimé court |
+| **Attention** | 🟠 Orange | Situation à surveiller | Objet qui se rapproche ou usager vulnérable en traversée |
+| **Information** | 🟢 Vert | Objet détecté sans risque immédiat estimé | Objet éloigné ou hors trajectoire |
+
+Le calcul s'appuie sur la position et la taille des objets dans l'image, leur suivi entre les frames, une estimation de proximité et le temps avant collision (TTC). Il s'agit d'heuristiques monoculaires dépendantes de la caméra et de la scène, pas d'une distance physique calibrée. La classe « nid-de-poule » nécessite un modèle qui a été entraîné à la détecter ; le modèle YOLO général fourni peut ne pas la reconnaître.
 
 ---
 
@@ -141,12 +163,11 @@ python src/main.py --source data/videos/lome.mp4 --show-fps
 
 | Partie | Fichier(s) concerné(s) | Responsable possible |
 | :--- | :--- | :--- |
-| **Lecture vidéo** | `video_reader.py` | Membre 1 |
+| **Lecture vidéo et fenêtre** | `video_reader.py`, `window_utils.py` | Membre 1 |
 | **Détection YOLO** | `detector.py` | Membre 1 ou 2 |
-| **Tracking** | `tracker.py` | Membre 2 |
-| **Évaluation du danger** | `risk_evaluator.py` | Membre 2 ou 3 |
-| **Alertes** | `alerts.py` | Membre 3 |
-| **Intégration + démo** | `main.py` + tests | Tout le monde |
+| **Suivi des objets** | `tracker.py` | Membre 2 |
+| **Évaluation du risque et HUD** | `risk_evaluator.py`, `hud.py` | Membre 2 ou 3 |
+| **Intégration + démonstrations** | `demo_detection.py`, `demo_video.py`, `tests/` | Tout le monde |
 
 > Chaque membre peut travailler sur une branche Git séparée (`feature/detection`, `feature/alerts`, etc.).
 
@@ -162,13 +183,23 @@ Placez vos vidéos dans le dossier `data/videos/`.
 
 ---
 
-## 9. Auteurs
+## 9. Tests
+
+Depuis la racine du projet, exécutez les tests avec :
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+---
+
+## 10. Auteurs
 
 Projet réalisé dans le cadre du cours de **Big Data – IAI Togo**.  
 *Année académique 2025-2026*
 
 ---
 
-## 10. Licence
+## 11. Licence
 
 Ce projet est réalisé à des fins pédagogiques.
