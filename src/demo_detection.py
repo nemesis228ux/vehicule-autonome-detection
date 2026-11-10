@@ -11,6 +11,12 @@ from typing import Optional, Sequence
 import cv2
 
 try:
+    from src.alerts import (
+        AlertManager,
+        NullSoundBackend,
+        WinsoundBackend,
+        draw_alert_overlay,
+    )
     from src.detector import Detector, draw_detections
     from src.hud import draw_risk_hud
     from src.risk_evaluator import DANGER_LABELS, DangerLevel, RiskEvaluator
@@ -19,6 +25,12 @@ try:
     from src.window_utils import fit_window, is_window_open
 except ModuleNotFoundError:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from src.alerts import (
+        AlertManager,
+        NullSoundBackend,
+        WinsoundBackend,
+        draw_alert_overlay,
+    )
     from src.detector import Detector, draw_detections
     from src.hud import draw_risk_hud
     from src.risk_evaluator import DANGER_LABELS, DangerLevel, RiskEvaluator
@@ -73,6 +85,16 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="Active l'évaluation du danger et le HUD (implique --track).",
     )
     parser.add_argument(
+        "--alerts",
+        action="store_true",
+        help="Active les alertes visuelles et sonores (implique --risk).",
+    )
+    parser.add_argument(
+        "--no-sound",
+        action="store_true",
+        help="Désactive le klaxon et conserve les alertes visuelles.",
+    )
+    parser.add_argument(
         "--tracker",
         default="bytetrack.yaml",
         help="Configuration Ultralytics du tracker (bytetrack.yaml ou botsort.yaml).",
@@ -101,6 +123,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="Nom ASCII de la fenêtre OpenCV (éviter les accents).",
     )
     args = parser.parse_args(argv)
+    if args.alerts:
+        args.risk = True
     if args.risk:
         args.track = True
     return args
@@ -111,9 +135,12 @@ def run(args: argparse.Namespace) -> int:
     output_path: Optional[Path] = None
     tracker: Optional[Tracker] = None
     risk_evaluator: Optional[RiskEvaluator] = None
+    alert_manager: Optional[AlertManager] = None
     tracked_ids: set[int] = set()
     highest_level = DangerLevel.INFORMATION
     critical_frames = 0
+    alert_events = 0
+    critical_alerts = 0
     delay = 1
     smoothed_fps = 0.0
     frame_count = 0
@@ -139,6 +166,11 @@ def run(args: argparse.Namespace) -> int:
             )
         if args.risk:
             risk_evaluator = RiskEvaluator()
+        if args.alerts:
+            sound_backend = (
+                NullSoundBackend() if args.no_sound else WinsoundBackend()
+            )
+            alert_manager = AlertManager(sound_backend=sound_backend)
 
         with VideoReader(args.source) as reader:
             print(f"Source     : {args.source}")
@@ -147,6 +179,14 @@ def run(args: argparse.Namespace) -> int:
                 print(f"Tracking   : {args.tracker}")
             if risk_evaluator is not None:
                 print("Danger     : actif")
+            if alert_manager is not None:
+                if args.no_sound:
+                    sound_state = "coupé"
+                elif alert_manager.sound_available:
+                    sound_state = "klaxon actif"
+                else:
+                    sound_state = "indisponible"
+                print(f"Alertes    : actives (son {sound_state})")
             print(f"Résolution : {reader.frame_width}x{reader.frame_height}")
             if not reader.is_live and reader.fps > 0:
                 delay = max(1, round(1000 / reader.fps))
@@ -165,7 +205,9 @@ def run(args: argparse.Namespace) -> int:
                 source_name = (
                     Path(str(args.source)).stem if not reader.is_live else "direct"
                 )
-                if risk_evaluator is not None:
+                if alert_manager is not None:
+                    suffix = "_alertes"
+                elif risk_evaluator is not None:
                     suffix = "_risque"
                 elif tracker is not None:
                     suffix = "_tracke"
@@ -212,6 +254,22 @@ def run(args: argparse.Namespace) -> int:
                         highest_level = summary.level
                     if summary.level == DangerLevel.CRITIQUE:
                         critical_frames += 1
+                    alert_event = None
+                    if alert_manager is not None:
+                        alert_event = alert_manager.update(
+                            summary, now_s=now, frame_index=frame_count
+                        )
+                        if (
+                            alert_event.changed
+                            and alert_event.level
+                            != DangerLevel.INFORMATION
+                        ):
+                            alert_events += 1
+                        if (
+                            alert_event.changed
+                            and alert_event.level == DangerLevel.CRITIQUE
+                        ):
+                            critical_alerts += 1
                     draw_risk_hud(
                         frame,
                         objects,
@@ -219,6 +277,8 @@ def run(args: argparse.Namespace) -> int:
                         fps=smoothed_fps if args.show_fps else None,
                         frame_index=frame_count,
                     )
+                    if alert_event is not None:
+                        draw_alert_overlay(frame, alert_event)
                 elif objects is not None:
                     draw_tracks(frame, objects, labels=args.labels)
                 else:
@@ -243,6 +303,9 @@ def run(args: argparse.Namespace) -> int:
                 key = cv2.waitKey(delay) & 0xFF
                 if key in (ord("q"), 27):
                     break
+                if key in (ord("m"), ord("M")) and alert_manager is not None:
+                    muted = alert_manager.toggle_mute()
+                    print(f"Son : {'coupé' if muted else 'actif'}")
 
                 if is_window_open(args.window):
                     window_seen = True
@@ -258,10 +321,21 @@ def run(args: argparse.Namespace) -> int:
             if risk_evaluator is not None:
                 print(f"Niveau max : {DANGER_LABELS[highest_level]}")
                 print(f"Frames critiques : {critical_frames}")
+            if alert_manager is not None:
+                print(f"Alertes : {alert_events} (critiques: {critical_alerts})")
+                if alert_manager.muted:
+                    sound_state = "coupé"
+                elif alert_manager.sound_available:
+                    sound_state = "actif"
+                else:
+                    sound_state = "indisponible"
+                print(f"Son : {sound_state}")
     except (ImportError, OSError, ValueError) as exc:
         print(f"Erreur : {exc}", file=sys.stderr)
         return 1
     finally:
+        if alert_manager is not None:
+            alert_manager.close()
         if writer is not None:
             writer.release()
         cv2.destroyAllWindows()
