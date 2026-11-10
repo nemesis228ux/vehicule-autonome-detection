@@ -54,16 +54,24 @@ vehicule-autonome-detection/
 │   ├── demo_detection.py # Point d'entrée : détection, suivi, risque et alertes
 │   ├── demo_video.py     # Démonstration du lecteur vidéo seul
 │   ├── video_reader.py   # Lecture vidéo, caméra et flux
-│   ├── detector.py       # Détection avec YOLOv8
+│   ├── detector.py       # Compatibilité avec les anciens imports
 │   ├── tracker.py        # Suivi ByteTrack, vitesse et trajectoire
-│   ├── risk_evaluator.py # Évaluation du danger
-│   ├── hud.py            # Affichage du niveau de risque
-│   ├── alerts.py         # Alertes visuelles et klaxon synthétique
+│   ├── risk_evaluator.py # Compatibilité avec les anciens imports
+│   ├── hud.py            # Compatibilité avec les anciens imports
+│   ├── alerts.py         # Compatibilité avec les anciens imports
 │   └── window_utils.py   # Adaptation de la fenêtre à l'écran
+│   ├── detection/        # Détection YOLOv8, modèles et rendu
+│   ├── alerts/           # Configuration, gestion, sons et overlay d'alerte
+│   ├── risk/             # Modèles et calcul du niveau de risque
+│   └── presentation/     # HUD et composants d'affichage
 │
 ├── tests/                # Tests unitaires
 └── outputs/              # Vidéos annotées générées avec --save
 ```
+
+Les modules historiques (`detector.py`, `risk_evaluator.py`, `hud.py` et
+`alerts.py`) conservent leurs imports publics et redirigent vers les packages
+organisés par fonctionnalité.
 
 ---
 
@@ -327,7 +335,6 @@ Les tests sont unitaires et ne nécessitent ni vidéo ni modèle : ils utilisent
 ### Sous Windows PowerShell
 
 ```powershell
-cd "D:\mak\IAI 3 EME ANNEE\COURS\BIG DATA\DEV BIG DATA\vehicule-autonome-detection"
 .venv\Scripts\Activate.ps1
 python -m unittest discover -s tests -v
 ```
@@ -367,65 +374,6 @@ Résultat actuel : **79 tests OK**.
 
 ---
 
-## 10. Branches développées et contexte de reprise
-
-### 10.1 Branches et spécificités
-
-| Branche | Commit | Spécificité principale | État |
-|---|---|---|---|
-| `main` | `2b616c5` | Squelette initial, README de référence | Poussée |
-| `feature/video-reader` | `3781fbc` → `4cc8b3d` → `b02d505` | `VideoReader`, `window_utils`, détection YOLOv8, filtrage des classes routières et première démo | Locale ; `origin` est à `4cc8b3d`, `b02d505` non poussé |
-| `feature/tracking` | `4f7e676` | ByteTrack, dépendance `lap`, `track_id`, vitesse, trajectoire, `draw_tracks`, option `--track` | Poussée |
-| `feature/risk-evaluator` | `a3fc8c5` | Risque monoculaire, HUD ADAS, option `--risk`, tests et README | Poussée |
-| `feature/alerts` | en cours | `alerts.py`, klaxon synthétique, cooldowns, mute, overlay et tests | Locale, non commitée |
-| `feature/detection` | — | **N'existe pas** ; la détection a été développée dans `feature/video-reader` | À ne pas recréer |
-
-### 10.2 Ce que contient réellement chaque branche
-
-- `feature/video-reader` ne contient pas seulement la lecture vidéo : elle porte aussi la détection YOLOv8, `window_utils` et l'intégration initiale dans `demo_detection.py`.
-- `feature/tracking` dépend de `feature/video-reader` ; elle ajoute les IDs stables, la vitesse, les trajectoires et les modes d'étiquettes.
-- `feature/risk-evaluator` dépend de `feature/tracking` ; elle ajoute `RiskEvaluator`, le HUD, l'option `--risk` et les tests de risque.
-- `feature/alerts` dépend de `feature/risk-evaluator` ; elle ajoute `AlertManager`, le klaxon synthétique, l'anti-spam, le mute et l'overlay.
-- Ordre logique : `main` → `feature/video-reader` → `feature/tracking` → `feature/risk-evaluator` → `feature/alerts`.
-
-### 10.3 État d'avancement
-
-- Terminés : lecture vidéo, détection YOLOv8, suivi ByteTrack, risque monoculaire, HUD et alertes.
-- `src/main.py` est encore vide : le point d'entrée actuel est `src/demo_detection.py`.
-- Les MP3 `klaxon_attention.mp3` et `klaxon_critique.mp3` sont prioritaires dans `assets/sounds/`.
-- Les WAV de secours sont générés par `scripts/generate_horn.py`.
-- Le son est asynchrone sous Windows : MCI pour les MP3, `winsound` pour les WAV. Hors Windows, les alertes restent visuelles.
-- La prochaine étape logique est l'intégration dans `main.py`, puis la calibration sur une vraie vidéo dashcam.
-
-### 10.4 Interfaces clés pour reprendre
-
-- `RiskEvaluator.evaluate(objects, frame_shape, fps) -> RiskSummary`
-- `draw_risk_hud(frame, objects, summary, fps=None, frame_index=0)`
-- `AlertManager.update(summary, now_s=None, frame_index=None) -> AlertEvent`
-- `draw_alert_overlay(frame, event, thickness=None)`
-- `WinsoundBackend` / `NullSoundBackend` : lecture audio injectable, utile pour les tests.
-
-### 10.5 Contraintes et limites connues
-
-- Windows : Python 3.13, environnement `.venv`, OpenCV 5, Ultralytics 8.4.207, `lap`.
-- Pas de `pygame` ni de `playsound` ; MCI Windows lit les MP3 et `winsound` lit les WAV.
-- Les textes HUD et les noms de fenêtres sont en **ASCII** pour éviter les problèmes de rendu OpenCV.
-- `models/yolov8n.pt` est gitignoré et doit être présent localement.
-- `data/videos/s.mp4` est un triptyque : IDs triplés et risque saturé, à ne pas utiliser pour la calibration.
-- Les nids-de-poule nécessitent un modèle entraîné spécifiquement ; YOLOv8n ne les détecte pas de façon fiable.
-- L'estimation de distance/TTC est monoculaire et non calibrée physiquement.
-- Aucune vraie vidéo dashcam n'est encore intégrée au dépôt.
-
-### 10.6 Consignes pour une autre IA
-
-1. Lire cette section avant toute modification.
-2. Partir de `feature/alerts` (ou de `feature/risk-evaluator` si les alertes ne sont pas encore fusionnées).
-3. Ne pas recréer `feature/detection` : elle n'existe pas.
-4. Lancer `python -m unittest discover -s tests -v` avant et après chaque changement.
-5. Conserver les textes HUD en ASCII et ne pas ajouter `pygame`/`playsound` sans décision explicite.
-6. Ne jamais committer de clé API, de secret ou de fichier `.env`.
-7. Vérifier les chemins Windows avec l'environnement `.venv` avant de conclure qu'un module est cassé.
-
 ### 10.7 Commandes de vérification rapide
 
 ```bash
@@ -439,6 +387,11 @@ python -m src.demo_detection --source data/videos/s.mp4 --alerts --no-sound --im
 ## 11. Auteurs
 
 Projet réalisé dans le cadre du cours de **Big Data – IAI Togo**.  
+Par:
+   **- BARRY ALI**
+   **- ABOTCHI-SODJEHOUN Clara**
+   **- AGBEGNIGAN Helmut**
+   **- KPOGO Yayra**
 *Année académique 2025-2026*
 
 ---
