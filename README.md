@@ -219,10 +219,14 @@ Vous devez voir en plus :
 
 - les IDs ByteTrack et les trajectoires ;
 - le HUD `INFORMATION / ATTENTION / CRITIQUE` ;
-- le panneau des niveaux et la légende ;
+- le panneau de synthèse et le déplacement apparent dans l'image (`STABLE` ou `BOUGE`) ;
 - la bordure orange ou rouge selon le danger ;
 - le klaxon d'attention ou le triple klaxon critique ;
 - les FPS en haut de la fenêtre.
+
+Le déplacement affiché est relatif à l'image : le mouvement de la caméra peut
+aussi déplacer les objets à l'écran. Le HUD n'affiche pas de distance physique ;
+la caméra n'étant pas calibrée, le niveau de risque reste une estimation.
 
 Commandes pendant l'exécution :
 
@@ -284,29 +288,44 @@ python -m src.main --source 0 --alerts --imgsz 320
 
 Une application de caméra réseau doit être installée sur le téléphone. Elle
 fournit soit une caméra virtuelle (sélectionnée comme un index `0`, `1`, ...),
-soit une URL vidéo compatible avec OpenCV. Pour une URL, le téléphone et
-l'ordinateur doivent généralement être sur le même réseau Wi-Fi ; démarrez le
-flux dans l'application et utilisez l'adresse exacte qu'elle affiche. Le chemin
-(`/video`, `/mjpeg`, etc.) et le protocole dépendent de l'application.
+soit une URL vidéo compatible avec OpenCV. Pour **IP Webcam sur Android**,
+démarrez le serveur dans l'application et utilisez l'adresse IP et le port
+affichés, en ajoutant `/video` à l'URL. Par exemple, si l'application affiche
+`http://192.168.137.27:8080`, l'adresse du flux est :
+
+```text
+http://192.168.137.27:8080/video
+```
+
+La page racine `http://192.168.137.27:8080` est l'interface web de
+l'application, pas le flux vidéo. IP Webcam utilise généralement HTTP ; ne
+remplacez pas `http` par `https` sauf si vous avez configuré HTTPS dans
+l'application. Le téléphone et l'ordinateur doivent pouvoir communiquer sur le
+réseau local.
 
 Le lecteur vidéo accepte déjà les URL via OpenCV : aucun module Python
 supplémentaire ni code spécifique à l'application n'est requis. Depuis la racine
 du projet, lancez par exemple :
 
 ```powershell
-python -m src.main --source "http://ADRESSE_DU_TELEPHONE:PORT/video" --alerts --imgsz 320
+python -m src.main --source "http://192.168.137.27:8080/video" --alerts --imgsz 320
 ```
 
-Remplacez l'adresse et le chemin par ceux fournis par l'application du
-téléphone. Pour une caméra virtuelle, utilisez plutôt son index :
+Remplacez l'adresse IP et le port par ceux affichés par votre application.
+Pour tester le flux sans lancer la détection, utilisez `demo_video` :
+
+```powershell
+python -m src.demo_video --source "http://192.168.137.27:8080/video"
+```
+
+Pour une caméra virtuelle, utilisez plutôt son index :
 
 ```powershell
 python -m src.main --source 1 --alerts --imgsz 320
 ```
 
 Autorisez l'accès au réseau local dans le pare-feu si nécessaire. Pour valider
-le flux avant la détection, vous pouvez également lancer
-`python -m src.demo_video --source "URL_DU_FLUX"`.
+le flux avant la détection, lancez la commande `demo_video` ci-dessus.
 
 ### 5.9 Dépannage
 
@@ -338,6 +357,8 @@ python scripts/generate_horn.py
 - **Attention** : bordure orange stable + un coup de klaxon, avec rappel espacé.
 - **Critique** : bordure rouge clignotante + triple klaxon, avec rappel plus fréquent.
 - Une escalade Attention → Critique déclenche immédiatement le klaxon critique.
+- Dès qu'aucun objet n'est détecté, le niveau d'alerte revient immédiatement à
+  Information et le son en cours est arrêté.
 - Le son est asynchrone et ne bloque pas la boucle vidéo ; MCI est utilisé pour les MP3, `winsound` pour les WAV.
 - Hors Windows, ou si aucun fichier audio n'est disponible, les alertes restent visuelles.
 
@@ -351,7 +372,15 @@ python scripts/generate_horn.py
 | **Attention** | 🟠 Orange | Situation à surveiller | Objet qui se rapproche ou usager vulnérable en traversée |
 | **Information** | 🟢 Vert | Objet détecté sans risque immédiat estimé | Objet éloigné ou hors trajectoire |
 
-Le calcul s'appuie sur la position et la taille des objets dans l'image, leur suivi entre les frames, une estimation de proximité et le temps avant collision (TTC). Il s'agit d'heuristiques monoculaires dépendantes de la caméra et de la scène, pas d'une distance physique calibrée. La classe « nid-de-poule » nécessite un modèle qui a été entraîné à la détecter ; le modèle YOLO général fourni peut ne pas la reconnaître.
+Le calcul s'appuie sur la position et la taille des objets dans l'image, leur
+suivi entre les frames, une estimation de proximité et un indicateur temporel
+d'approche dérivé du changement apparent de taille ou de position. Ces valeurs
+sont des heuristiques monoculaires dépendantes de la caméra et de la scène :
+elles ne représentent ni une distance physique ni un temps de collision
+fiablement calibré. L'interface affiche le niveau estimé et le mouvement dans
+l'image, mais pas de distance en mètres. La classe « nid-de-poule » nécessite
+un modèle entraîné à la détecter ; le modèle YOLO général fourni peut ne pas la
+reconnaître.
 
 Le package `src/alerts/` transforme ces niveaux en alertes stables : debounce
 pour l'Attention, immédiateté pour le Critique, cooldowns pour éviter le spam,

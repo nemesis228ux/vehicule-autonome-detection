@@ -48,9 +48,6 @@ class RiskEvaluator:
         if fps is None or fps <= 0:
             raise ValueError("fps doit être strictement positif.")
 
-        for state in self._states.values():
-            state.missed += 1
-
         seen: set[int] = set()
         assessments: List[RiskAssessment] = []
 
@@ -61,7 +58,7 @@ class RiskEvaluator:
 
             seen.add(track_id)
             state = self._states.get(track_id)
-            if state is None:
+            if state is None or state.missed > 0:
                 state = _RiskState()
                 self._states[track_id] = state
             state.missed = 0
@@ -72,6 +69,7 @@ class RiskEvaluator:
         for track_id, state in list(self._states.items()):
             if track_id in seen:
                 continue
+            state.missed += 1
             if state.missed > self.config.state_max_age:
                 del self._states[track_id]
 

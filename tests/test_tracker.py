@@ -1,9 +1,15 @@
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 
 from src.detector import Detection
-from src.tracker import TrackedObject, Tracker, draw_tracks
+from src.tracker import (
+    TrackedObject,
+    Tracker,
+    draw_tracks,
+    image_motion_label,
+)
 
 
 def make_detection(
@@ -214,6 +220,18 @@ class TrackerTests(unittest.TestCase):
                 [obj],
                 labels="invalide",
             )
+
+    def test_draw_tracks_can_display_image_motion(self):
+        detection = make_detection(10, 10, 50, 50, 1)
+        obj = TrackedObject(1, detection, 2, 2, 0, (0.0, 5.0), ((30, 30),))
+        frame = np.zeros((80, 80, 3), dtype=np.uint8)
+
+        with patch("src.tracker.cv2.putText") as put_text:
+            draw_tracks(frame, [obj], show_motion=True)
+
+        labels = [call.args[1] for call in put_text.call_args_list]
+        self.assertIn("IMG MVT v", labels[0])
+        self.assertEqual(image_motion_label(obj, frame.shape), "BOUGE v")
 
 
 if __name__ == "__main__":

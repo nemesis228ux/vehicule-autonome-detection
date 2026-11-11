@@ -4,12 +4,13 @@ import numpy as np
 
 from src.detector import Detection
 from src.hud import draw_risk_hud
+from src.presentation.hud import _status_message
 from src.risk_evaluator import (
     DangerLevel,
     RiskConfig,
     RiskEvaluator,
 )
-from src.tracker import TrackedObject
+from src.tracker import TrackedObject, image_motion_label
 
 FRAME_SHAPE = (720, 1280, 3)
 FPS = 30.0
@@ -227,6 +228,18 @@ class RiskEvaluatorTests(unittest.TestCase):
         summary = evaluator.evaluate([far], FRAME_SHAPE, FPS)
         self.assertEqual(summary.level, DangerLevel.INFORMATION)
 
+    def test_reappearing_track_does_not_inherit_stale_critical_risk(self):
+        evaluator = RiskEvaluator(self.config(release_frames=10))
+        for obj in approaching_sequence():
+            summary = evaluator.evaluate([obj], FRAME_SHAPE, FPS)
+        self.assertEqual(summary.level, DangerLevel.CRITIQUE)
+
+        evaluator.evaluate([], FRAME_SHAPE, FPS)
+        far = make_object(y2=400, height=200, hits=10)
+        summary = evaluator.evaluate([far], FRAME_SHAPE, FPS)
+
+        self.assertEqual(summary.level, DangerLevel.INFORMATION)
+
     def test_reset_clears_history(self):
         evaluator = RiskEvaluator(self.config())
         for obj in approaching_sequence():
@@ -269,6 +282,34 @@ class RiskEvaluatorTests(unittest.TestCase):
 
 
 class RiskHudTests(unittest.TestCase):
+    def test_movement_label_uses_image_displacement_and_direction(self):
+        stable = make_object(vx=0.1, vy=0.1)
+        moving_right = make_object(vx=10.0, vy=1.0)
+        moving_up = make_object(vx=1.0, vy=-10.0)
+
+        self.assertEqual(
+            image_motion_label(stable, FRAME_SHAPE), "STABLE"
+        )
+        self.assertEqual(
+            image_motion_label(moving_right, FRAME_SHAPE), "BOUGE >"
+        )
+        self.assertEqual(
+            image_motion_label(moving_up, FRAME_SHAPE), "BOUGE ^"
+        )
+
+    def test_banner_distinguishes_empty_scene_from_no_estimated_risk(self):
+        evaluator = RiskEvaluator()
+        empty = evaluator.evaluate([], FRAME_SHAPE, FPS)
+        present = evaluator.evaluate(
+            [make_object(y2=400, height=200)], FRAME_SHAPE, FPS
+        )
+
+        self.assertEqual(
+            _status_message(empty, compact=False), "AUCUN OBJET DETECTE"
+        )
+        self.assertIn("AUCUN RISQUE ESTIME", _status_message(present, False))
+        self.assertNotIn("TTC", _status_message(present, False))
+
     def test_hud_draws_on_large_frame(self):
         evaluator = RiskEvaluator(
             RiskConfig(ttc_smoothing=0.0, score_smoothing=0.0)
