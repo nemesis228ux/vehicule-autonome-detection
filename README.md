@@ -39,31 +39,41 @@ vehicule-autonome-detection/
 ├── .gitignore
 │
 ├── assets/
-│   └── sounds/           # Klaxons MP3 prioritaires + WAV de secours
+│   └── sounds/            # Klaxons MP3 prioritaires + WAV de secours
 │
 ├── data/
-│   ├── videos/          # Vidéos de test
-│   └── images/          # Images de test
+│   ├── videos/            # Vidéos de test (à fournir)
+│   └── images/            # Images de test (à fournir)
 │
-├── models/              # Modèles YOLO (.pt), dont yolov8n.pt
+├── models/                # Modèles YOLO locaux (non versionnés)
 │
 ├── scripts/
-│   └── generate_horn.py # Générateur des klaxons synthétiques
+│   └── generate_horn.py   # Générateur des klaxons synthétiques WAV
 │
 ├── src/
-│   ├── demo_detection.py # Point d'entrée : détection, suivi, risque et alertes
-│   ├── demo_video.py     # Démonstration du lecteur vidéo seul
-│   ├── video_reader.py   # Lecture vidéo, caméra et flux
-│   ├── detector.py       # Détection avec YOLOv8
-│   ├── tracker.py        # Suivi ByteTrack, vitesse et trajectoire
-│   ├── risk_evaluator.py # Évaluation du danger
-│   ├── hud.py            # Affichage du niveau de risque
-│   ├── alerts.py         # Alertes visuelles et klaxon synthétique
-│   └── window_utils.py   # Adaptation de la fenêtre à l'écran
+│   ├── main.py            # Point d'entrée principal
+│   ├── demo_detection.py  # Lanceur de compatibilité
+│   ├── demo_video.py      # Démonstration du lecteur vidéo seul
+│   ├── video_reader.py    # Lecture vidéo, caméra et flux
+│   ├── detector.py        # Compatibilité avec les anciens imports
+│   ├── tracker.py         # Suivi ByteTrack, vitesse et trajectoire
+│   ├── risk_evaluator.py  # Compatibilité avec les anciens imports
+│   ├── hud.py             # Compatibilité avec les anciens imports
+│   ├── alerts.py          # Compatibilité avec les anciens imports
+│   ├── window_utils.py    # Adaptation de la fenêtre à l'écran
+│   ├── detection_app/     # CLI, orchestration et rendu de la démo
+│   ├── detection/         # Détection YOLOv8, modèles et rendu
+│   ├── alerts/            # Configuration, gestion, sons et overlay d'alerte
+│   ├── risk/              # Modèles et calcul du niveau de risque
+│   └── presentation/      # HUD et composants d'affichage
 │
-├── tests/                # Tests unitaires
-└── outputs/              # Vidéos annotées générées avec --save
+├── tests/                 # Tests unitaires
+└── outputs/               # Vidéos annotées générées avec --save
 ```
+
+Les modules historiques (`detector.py`, `risk_evaluator.py`, `hud.py` et
+`alerts.py`) conservent leurs imports publics et redirigent vers les packages
+organisés par fonctionnalité.
 
 ---
 
@@ -71,20 +81,20 @@ vehicule-autonome-detection/
 
 | Outil / Bibliothèque | Rôle |
 | :--- | :--- |
-| **Python 3.9+** | Langage principal |
+| **Python 3.10+** | Langage principal |
 | **Ultralytics YOLOv8** | Détection d'objets |
 | **ByteTrack** | Suivi des objets entre les images |
 | **OpenCV** | Lecture vidéo, affichage, dessin |
 | **NumPy** | Calculs numériques et génération du klaxon |
 | **lap** | Association utilisée par le suivi |
-| **winsound / MCI / wave** | Lecture asynchrone des sons et génération des WAV de secours |
+| **winsound / MCI / wave** | Lecture audio sous Windows et génération des WAV de secours |
 
 ---
 
 ## 4. Installation
 
 ### Prérequis
-- Python 3.9 ou supérieur
+- Python 3.10 ou supérieur
 - Git
 - *(Recommandé)* Un environnement virtuel
 
@@ -92,23 +102,23 @@ vehicule-autonome-detection/
 
 1. **Cloner le dépôt :**
    ```bash
-   git clone https://github.com/VOTRE_ORGANISATION/vehicule-autonome-detection.git
+   git clone https://github.com/nemesis228ux/vehicule-autonome-detection.git
    cd vehicule-autonome-detection
    ```
 
 2. **Créer un environnement virtuel :**
    ```bash
-   python -m venv venv
+   python -m venv .venv
    ```
 
 3. **Activer l'environnement virtuel :**
    - **Sur Windows :**
      ```bash
-     venv\Scripts\activate
+     .venv\Scripts\Activate.ps1
      ```
    - **Sur Linux / macOS :**
      ```bash
-     source venv/bin/activate
+     source .venv/bin/activate
      ```
 
 4. **Installer les dépendances :**
@@ -120,7 +130,15 @@ vehicule-autonome-detection/
 
 ## 5. Lancer la démonstration réelle
 
-Le point d'entrée est `src/demo_detection.py`. Il enchaîne :
+Le point d'entrée recommandé est `src/main.py`. Le module
+`src/demo_detection.py` reste disponible comme ancien lanceur compatible.
+Depuis la racine du dépôt, lancez l'application ainsi :
+
+```powershell
+python -m src.main --help
+```
+
+Le pipeline enchaîne :
 
 ```text
 VideoReader -> Detector YOLOv8 -> Tracker ByteTrack
@@ -128,68 +146,76 @@ VideoReader -> Detector YOLOv8 -> Tracker ByteTrack
             -> HUD/overlay -> fenêtre OpenCV
 ```
 
-La fenêtre affiche la vidéo annotée : cadres, IDs, trajectoires, HUD de risque, bordures d'alerte et FPS.
+La fenêtre affiche la vidéo annotée : cadres, IDs et trajectoires lorsque le
+suivi est activé, HUD et alertes selon les options, et FPS avec `--show-fps`.
 
-### 5.1 Activer l'environnement
+### 5.1 Vérifier l'installation
 
-Depuis la racine du projet, sous Windows PowerShell :
+Activez l'environnement virtuel créé à l'étape d'installation, puis vérifiez
+les dépendances et les tests :
 
 ```powershell
-cd "D:\mak\IAI 3 EME ANNEE\COURS\BIG DATA\DEV BIG DATA\vehicule-autonome-detection"
 .venv\Scripts\Activate.ps1
-```
-
-Vérification rapide des dépendances :
-
-```powershell
 python -c "import cv2, ultralytics, numpy; print('OK')"
 python -m unittest discover -s tests -v
 ```
 
 ### 5.2 Vérifier le modèle YOLO
 
-Le modèle local attendu est :
+Le fichier `.pt` contient les poids appris de YOLO, utilisés pour reconnaître
+les objets dans les images. `yolov8n.pt` est le modèle nano pré-entraîné et
+léger utilisé par défaut. Placez-le dans `models\` :
 
 ```text
 models\yolov8n.pt
 ```
 
-Les poids ne sont pas versionnés par Git (`.gitignore`). S'ils sont absents, Ultralytics peut télécharger `yolov8n.pt` au premier lancement. Pour imposer un autre modèle :
+Vous n'avez pas besoin de passer `--model` pour le modèle par défaut. Pour
+utiliser un modèle différent (par exemple vos poids entraînés `best.pt`),
+placez-le dans `models\` et indiquez son chemin :
 
 ```powershell
-python -m src.demo_detection --source data/videos/s.mp4 --model models\best.pt
+python -m src.main --source data/videos/route.mp4 --model models\best.pt
 ```
+
+Les poids ne sont pas versionnés par Git (`.gitignore`). Si le fichier local
+est absent, Ultralytics peut tenter de télécharger `yolov8n.pt` au premier
+lancement. Le modèle général pré-entraîné ne reconnaît pas nécessairement les
+nids-de-poule : cette classe demande un modèle entraîné pour cela.
 
 ### 5.3 Fournir la vidéo
 
-Place ta vidéo dans `data\videos\`. Ce dossier est ignoré par Git : chaque machine doit fournir sa propre vidéo.
+Placez votre propre vidéo dans `data\videos\`. Les médias de test ne sont pas
+versionnés par Git ; le dépôt ne fournit pas de vidéo d'exemple.
 
 ```text
-data\videos\s.mp4
+data\videos\route.mp4
 ```
 
-> `s.mp4` est un triptyque de trois scènes empilées : la démo fonctionne, mais les objets reçoivent trois IDs et le risque sature souvent en Critique. Pour un test réaliste, utilise une vidéo dashcam normale.
+Pour évaluer le suivi et le risque, privilégiez une vidéo dashcam normale.
 
 ### 5.4 Commande minimale
 
 ```powershell
-python -m src.demo_detection --source data/videos/s.mp4 --imgsz 320
+python -m src.main --source data/videos/route.mp4 --imgsz 320
 ```
 
-Tu dois voir :
+Vous devez voir :
 
 - une fenêtre OpenCV avec la vidéo ;
 - des cadres colorés autour des objets détectés ;
 - les catégories et scores de confiance ;
 - la console avec `Source`, `Modèle`, `Résolution` et le nombre de frames traitées.
 
+Sans `--source`, l'application essaie d'ouvrir la caméra locale d'index `0`.
+
 ### 5.5 Démonstration complète
 
 ```powershell
-python -m src.demo_detection --source data/videos/s.mp4 --alerts --show-fps --imgsz 320
+python -m src.main --source data/videos/route.mp4 --alerts --show-fps --imgsz 320
 ```
 
-Tu dois voir en plus :
+Vous devez voir en plus :
 
 - les IDs ByteTrack et les trajectoires ;
 - le HUD `INFORMATION / ATTENTION / CRITIQUE` ;
@@ -203,72 +229,110 @@ Commandes pendant l'exécution :
 - `q` ou Échap : quitter ;
 - `m` : couper/réactiver le son.
 
-### 5.6 Options utiles de `demo_detection`
+### 5.6 Options de `main`
 
 | Option | Effet |
 |---|---|
 | `--source` | Fichier vidéo, caméra (`0`, `1`, ...) ou URL de flux |
-| `--model` | Modèle Ultralytics ou chemin `.pt` |
-| `--conf` | Seuil de confiance (baisser à `0.10` si peu de détections) |
-| `--imgsz` | Taille d'inférence (`320` plus rapide sur CPU) |
+| `--model` | Modèle Ultralytics ou chemin `.pt` (défaut : `yolov8n.pt`) |
+| `--conf` | Seuil de confiance (défaut : `0.35`) |
+| `--iou` | Seuil IoU du NMS (défaut : `0.45`) |
+| `--imgsz` | Taille d'inférence (défaut : `640`, `320` peut être plus rapide sur CPU) |
+| `--all-classes` | Conserve aussi les classes hors catégories routières |
 | `--track` | Active ByteTrack et les IDs |
 | `--risk` | Active le risque et le HUD (implique `--track`) |
 | `--alerts` | Active les alertes visuelles et sonores (implique `--risk`) |
 | `--no-sound` | Garde les alertes visuelles sans klaxon |
 | `--save` | Enregistre la vidéo annotée dans `outputs/` |
 | `--show-fps` | Affiche les FPS |
+| `--tracker` | Tracker Ultralytics (défaut : `bytetrack.yaml`, ex. `botsort.yaml`) |
 | `--labels` | `full`, `id` ou `none` |
 | `--trail-length` | Nombre de points de trajectoire |
 | `--max-age` | Frames avant purge d'un ID perdu |
+| `--window` | Nom de la fenêtre OpenCV |
 
 Exemples :
 
 ```powershell
 # Suivi seul
-python -m src.demo_detection --source data/videos/s.mp4 --track --imgsz 320
+python -m src.main --source data/videos/route.mp4 --track --imgsz 320
 
 # Risque seul
-python -m src.demo_detection --source data/videos/s.mp4 --risk --imgsz 320
+python -m src.main --source data/videos/route.mp4 --risk --imgsz 320
 
 # Alertes visuelles sans son
-python -m src.demo_detection --source data/videos/s.mp4 --alerts --no-sound --imgsz 320
+python -m src.main --source data/videos/route.mp4 --alerts --no-sound --imgsz 320
 
 # Sauvegarde de la vidéo annotée
-python -m src.demo_detection --source data/videos/s.mp4 --alerts --save --show-fps --imgsz 320
+python -m src.main --source data/videos/route.mp4 --alerts --save --show-fps --imgsz 320
 ```
 
-La sauvegarde produit `outputs\s_alertes.mp4` (ou `s_risque.mp4`, `s_tracke.mp4` selon les options).
+La sauvegarde crée un fichier dans `outputs\`, nommé d'après la source et les
+options (par exemple `route_alertes.mp4`, `route_risque.mp4` ou
+`route_tracke.mp4`). Pour un flux direct ou une caméra, le nom commence par
+`direct`.
 
 ### 5.7 Webcam
 
 ```powershell
-python -m src.demo_detection --source 0 --alerts --imgsz 320
+python -m src.main --source 0 --alerts --imgsz 320
 ```
 
 `0` correspond généralement à la webcam par défaut. Avec DroidCam/Iriun, essayer `1`, `2`, etc.
 
-### 5.8 Dépannage
+### 5.8 Caméra d'un téléphone
+
+Une application de caméra réseau doit être installée sur le téléphone. Elle
+fournit soit une caméra virtuelle (sélectionnée comme un index `0`, `1`, ...),
+soit une URL vidéo compatible avec OpenCV. Pour une URL, le téléphone et
+l'ordinateur doivent généralement être sur le même réseau Wi-Fi ; démarrez le
+flux dans l'application et utilisez l'adresse exacte qu'elle affiche. Le chemin
+(`/video`, `/mjpeg`, etc.) et le protocole dépendent de l'application.
+
+Le lecteur vidéo accepte déjà les URL via OpenCV : aucun module Python
+supplémentaire ni code spécifique à l'application n'est requis. Depuis la racine
+du projet, lancez par exemple :
+
+```powershell
+python -m src.main --source "http://ADRESSE_DU_TELEPHONE:PORT/video" --alerts --imgsz 320
+```
+
+Remplacez l'adresse et le chemin par ceux fournis par l'application du
+téléphone. Pour une caméra virtuelle, utilisez plutôt son index :
+
+```powershell
+python -m src.main --source 1 --alerts --imgsz 320
+```
+
+Autorisez l'accès au réseau local dans le pare-feu si nécessaire. Pour valider
+le flux avant la détection, vous pouvez également lancer
+`python -m src.demo_video --source "URL_DU_FLUX"`.
+
+### 5.9 Dépannage
 
 - **Aucune fenêtre** : lancer la commande dans une session Windows avec affichage, pas dans un terminal sans GUI.
 - **Aucun cadre** : baisser `--conf 0.10`, essayer `--all-classes`, vérifier `--model` et `--source`.
 - **Trop lent** : garder `yolov8n.pt` et `--imgsz 320`.
 - **Pas de son** : vérifier la présence des MP3 dans `assets\sounds\`, le volume Windows, et que `--no-sound` n'est pas actif.
-- **Trop d'alertes** : normal sur `s.mp4` (triptyque) ; tester sur une vraie vidéo dashcam.
+- **Trop d'alertes** : le risque est une heuristique monoculaire ; vérifiez avec
+  une vidéo représentative et ajustez les paramètres de l'évaluateur si besoin.
 
-### 5.9 Fichiers audio
+### 5.10 Fichiers audio
 
 Placez les klaxons dans `assets/sounds/` :
 
 - `klaxon_attention.mp3` : klaxon d'attention (prioritaire).
 - `klaxon_critique.mp3` : klaxon critique (prioritaire).
 
-Les MP3 sont lus via **MCI Windows**, de façon asynchrone. Si un MP3 est absent, le WAV correspondant (`klaxon_attention.wav`, `klaxon_critique.wav`) sert de secours. Ces WAV peuvent être régénérés avec :
+Les MP3 fournis sont lus via **MCI Windows**, de façon asynchrone. Si un MP3
+n'est pas disponible, le WAV correspondant sert de secours. Les fichiers WAV
+peuvent être régénérés (et remplacés) avec :
 
 ```powershell
 python scripts/generate_horn.py
 ```
 
-### 5.10 Comportement des alertes
+### 5.11 Comportement des alertes
 
 - **Information** : aucun son, aucune bordure d'alerte.
 - **Attention** : bordure orange stable + un coup de klaxon, avec rappel espacé.
@@ -289,7 +353,10 @@ python scripts/generate_horn.py
 
 Le calcul s'appuie sur la position et la taille des objets dans l'image, leur suivi entre les frames, une estimation de proximité et le temps avant collision (TTC). Il s'agit d'heuristiques monoculaires dépendantes de la caméra et de la scène, pas d'une distance physique calibrée. La classe « nid-de-poule » nécessite un modèle qui a été entraîné à la détecter ; le modèle YOLO général fourni peut ne pas la reconnaître.
 
-Le module `alerts.py` transforme ces niveaux en alertes stables : debounce pour l'Attention, immédiateté pour le Critique, cooldowns pour éviter le spam, mute utilisateur et overlay visuel. Le son utilise les MP3 fournis dans `assets/sounds/`, avec un klaxon synthétique WAV de secours généré localement.
+Le package `src/alerts/` transforme ces niveaux en alertes stables : debounce
+pour l'Attention, immédiateté pour le Critique, cooldowns pour éviter le spam,
+mute utilisateur et overlay visuel. Le son utilise les MP3 fournis dans
+`assets/sounds/`, avec les WAV de secours générés localement.
 
 ---
 
@@ -297,14 +364,12 @@ Le module `alerts.py` transforme ces niveaux en alertes stables : debounce pour 
 
 | Partie | Fichier(s) concerné(s) | Responsable possible |
 | :--- | :--- | :--- |
-| **Lecture vidéo et fenêtre** | `video_reader.py`, `window_utils.py` | Membre 1 |
-| **Détection YOLO** | `detector.py` | Membre 1 ou 2 |
-| **Suivi des objets** | `tracker.py` | Membre 2 |
-| **Évaluation du risque et HUD** | `risk_evaluator.py`, `hud.py` | Membre 2 ou 3 |
-| **Alertes visuelles et sonores** | `alerts.py`, `assets/sounds/` | Membre 3 |
-| **Intégration + démonstrations** | `demo_detection.py`, `demo_video.py`, `tests/` | Tout le monde |
-
-> Chaque membre peut travailler sur une branche Git séparée. Les branches réellement utilisées sont détaillées à la section 10.
+| **Lecture vidéo et fenêtre** | `src/video_reader.py`, `src/window_utils.py` | Membre 1 |
+| **Détection YOLO** | `src/detection/`, `src/detector.py` | Membre 1 ou 2 |
+| **Suivi des objets** | `src/tracker.py` | Membre 2 |
+| **Évaluation du risque et HUD** | `src/risk/`, `src/presentation/` | Membre 2 ou 3 |
+| **Alertes visuelles et sonores** | `src/alerts/`, `assets/sounds/` | Membre 3 |
+| **Intégration + démonstrations** | `src/main.py`, `src/detection_app/`, `src/demo_video.py`, `tests/` | Tout le monde |
 
 ---
 
@@ -314,9 +379,9 @@ Le module `alerts.py` transforme ces niveaux en alertes stables : debounce pour 
 - Vidéos contenant des nids-de-poule
 - Scènes avec beaucoup de zemidjans et de piétons
 
-Placez vos vidéos dans le dossier `data/videos/`.
-
-> `data/videos/s.mp4` est un **triptyque de trois scènes empilées** : chaque objet peut recevoir trois IDs et le risque sature souvent en Critique. Il sert uniquement aux tests de plomberie, pas à la calibration. Une vidéo dashcam réelle est nécessaire pour régler les seuils.
+Les vidéos de test ne sont pas incluses dans le dépôt. Une vidéo dashcam réelle
+est préférable pour évaluer le suivi et le risque ; ces résultats dépendent
+fortement de la scène et de la caméra.
 
 ---
 
@@ -327,7 +392,6 @@ Les tests sont unitaires et ne nécessitent ni vidéo ni modèle : ils utilisent
 ### Sous Windows PowerShell
 
 ```powershell
-cd "D:\mak\IAI 3 EME ANNEE\COURS\BIG DATA\DEV BIG DATA\vehicule-autonome-detection"
 .venv\Scripts\Activate.ps1
 python -m unittest discover -s tests -v
 ```
@@ -350,7 +414,7 @@ python -m unittest tests.test_alerts.AlertManagerTests.test_critical_is_immediat
 ### Résultat attendu
 
 ```text
-Ran 79 tests in ...
+Ran 80 tests in ...
 OK
 ```
 
@@ -361,77 +425,27 @@ La suite couvre :
 - `test_tracker.py` : IDs, vitesse, trajectoire, expiration et rendu ;
 - `test_risk_evaluator.py` : TTC, corridor, VRU, hystérésis, purge et HUD ;
 - `test_alerts.py` : debounce, cooldowns, escalade, mute, backend audio et overlay ;
-- `test_window_utils.py` : redimensionnement et conservation du ratio.
+- `test_window_utils.py` : redimensionnement et conservation du ratio ;
+- `test_main.py` : transmission des arguments au point d'entrée principal.
 
-Résultat actuel : **79 tests OK**.
+Les tests simulent les sources vidéo et les modèles ; ils ne valident pas
+l'ouverture réelle d'une caméra ni la qualité du modèle YOLO.
 
 ---
 
-## 10. Branches développées et contexte de reprise
+## 10. Commandes de vérification rapide
 
-### 10.1 Branches et spécificités
+Depuis la racine du dépôt, avec l'environnement virtuel activé :
 
-| Branche | Commit | Spécificité principale | État |
-|---|---|---|---|
-| `main` | `2b616c5` | Squelette initial, README de référence | Poussée |
-| `feature/video-reader` | `3781fbc` → `4cc8b3d` → `b02d505` | `VideoReader`, `window_utils`, détection YOLOv8, filtrage des classes routières et première démo | Locale ; `origin` est à `4cc8b3d`, `b02d505` non poussé |
-| `feature/tracking` | `4f7e676` | ByteTrack, dépendance `lap`, `track_id`, vitesse, trajectoire, `draw_tracks`, option `--track` | Poussée |
-| `feature/risk-evaluator` | `a3fc8c5` | Risque monoculaire, HUD ADAS, option `--risk`, tests et README | Poussée |
-| `feature/alerts` | en cours | `alerts.py`, klaxon synthétique, cooldowns, mute, overlay et tests | Locale, non commitée |
-| `feature/detection` | — | **N'existe pas** ; la détection a été développée dans `feature/video-reader` | À ne pas recréer |
-
-### 10.2 Ce que contient réellement chaque branche
-
-- `feature/video-reader` ne contient pas seulement la lecture vidéo : elle porte aussi la détection YOLOv8, `window_utils` et l'intégration initiale dans `demo_detection.py`.
-- `feature/tracking` dépend de `feature/video-reader` ; elle ajoute les IDs stables, la vitesse, les trajectoires et les modes d'étiquettes.
-- `feature/risk-evaluator` dépend de `feature/tracking` ; elle ajoute `RiskEvaluator`, le HUD, l'option `--risk` et les tests de risque.
-- `feature/alerts` dépend de `feature/risk-evaluator` ; elle ajoute `AlertManager`, le klaxon synthétique, l'anti-spam, le mute et l'overlay.
-- Ordre logique : `main` → `feature/video-reader` → `feature/tracking` → `feature/risk-evaluator` → `feature/alerts`.
-
-### 10.3 État d'avancement
-
-- Terminés : lecture vidéo, détection YOLOv8, suivi ByteTrack, risque monoculaire, HUD et alertes.
-- `src/main.py` est encore vide : le point d'entrée actuel est `src/demo_detection.py`.
-- Les MP3 `klaxon_attention.mp3` et `klaxon_critique.mp3` sont prioritaires dans `assets/sounds/`.
-- Les WAV de secours sont générés par `scripts/generate_horn.py`.
-- Le son est asynchrone sous Windows : MCI pour les MP3, `winsound` pour les WAV. Hors Windows, les alertes restent visuelles.
-- La prochaine étape logique est l'intégration dans `main.py`, puis la calibration sur une vraie vidéo dashcam.
-
-### 10.4 Interfaces clés pour reprendre
-
-- `RiskEvaluator.evaluate(objects, frame_shape, fps) -> RiskSummary`
-- `draw_risk_hud(frame, objects, summary, fps=None, frame_index=0)`
-- `AlertManager.update(summary, now_s=None, frame_index=None) -> AlertEvent`
-- `draw_alert_overlay(frame, event, thickness=None)`
-- `WinsoundBackend` / `NullSoundBackend` : lecture audio injectable, utile pour les tests.
-
-### 10.5 Contraintes et limites connues
-
-- Windows : Python 3.13, environnement `.venv`, OpenCV 5, Ultralytics 8.4.207, `lap`.
-- Pas de `pygame` ni de `playsound` ; MCI Windows lit les MP3 et `winsound` lit les WAV.
-- Les textes HUD et les noms de fenêtres sont en **ASCII** pour éviter les problèmes de rendu OpenCV.
-- `models/yolov8n.pt` est gitignoré et doit être présent localement.
-- `data/videos/s.mp4` est un triptyque : IDs triplés et risque saturé, à ne pas utiliser pour la calibration.
-- Les nids-de-poule nécessitent un modèle entraîné spécifiquement ; YOLOv8n ne les détecte pas de façon fiable.
-- L'estimation de distance/TTC est monoculaire et non calibrée physiquement.
-- Aucune vraie vidéo dashcam n'est encore intégrée au dépôt.
-
-### 10.6 Consignes pour une autre IA
-
-1. Lire cette section avant toute modification.
-2. Partir de `feature/alerts` (ou de `feature/risk-evaluator` si les alertes ne sont pas encore fusionnées).
-3. Ne pas recréer `feature/detection` : elle n'existe pas.
-4. Lancer `python -m unittest discover -s tests -v` avant et après chaque changement.
-5. Conserver les textes HUD en ASCII et ne pas ajouter `pygame`/`playsound` sans décision explicite.
-6. Ne jamais committer de clé API, de secret ou de fichier `.env`.
-7. Vérifier les chemins Windows avec l'environnement `.venv` avant de conclure qu'un module est cassé.
-
-### 10.7 Commandes de vérification rapide
-
-```bash
+```powershell
+# Tests unitaires
 python -m unittest discover -s tests -v
+
+# Détection en direct depuis la caméra par défaut (q ou Échap pour quitter)
+python -m src.main --source 0 --alerts --imgsz 320
+
+# Générer à nouveau les WAV de secours si nécessaire
 python scripts/generate_horn.py
-python -m src.demo_detection --source data/videos/s.mp4 --alerts --no-sound --imgsz 320
 ```
 
 ---
@@ -439,6 +453,12 @@ python -m src.demo_detection --source data/videos/s.mp4 --alerts --no-sound --im
 ## 11. Auteurs
 
 Projet réalisé dans le cadre du cours de **Big Data – IAI Togo**.  
+Par:
+   **- BARRY ALI**
+   **- MATETCHO Albert**
+   **- ABOTCHI-SODJEHOUN Clara**
+   **- AGBEGNIGAN Helmut**
+   **- KPOGO Yayra**
 *Année académique 2025-2026*
 
 ---

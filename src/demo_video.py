@@ -41,12 +41,53 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def _update_fps(frame, previous_time: float, smoothed_fps: float, show_fps: bool):
+    now = time.perf_counter()
+    elapsed = now - previous_time
+    if elapsed > 0:
+        instant_fps = 1.0 / elapsed
+        smoothed_fps = (
+            instant_fps
+            if smoothed_fps == 0
+            else 0.9 * smoothed_fps + 0.1 * instant_fps
+        )
+
+    if show_fps:
+        cv2.putText(
+            frame,
+            f"FPS {smoothed_fps:5.1f}",
+            (10, 30),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.8,
+            (0, 255, 0),
+            2,
+            cv2.LINE_AA,
+        )
+    return now, smoothed_fps
+
+
+def _play_frames(reader, window: str, delay: int, show_fps: bool) -> None:
+    smoothed_fps = 0.0
+    previous_time = time.perf_counter()
+    window_seen = False
+
+    for frame in reader:
+        previous_time, smoothed_fps = _update_fps(
+            frame, previous_time, smoothed_fps, show_fps
+        )
+        cv2.imshow(window, frame)
+        key = cv2.waitKey(delay) & 0xFF
+        if key in (ord("q"), 27):
+            break
+
+        if is_window_open(window):
+            window_seen = True
+        elif window_seen:
+            break
+
+
 def run(source: str, window: str, show_fps: bool) -> int:
     delay = 1
-    smoothed_fps = 0.0
-    window_seen = False
-    previous_time = time.perf_counter()
-
     try:
         with VideoReader(source) as reader:
             print(f"Source       : {source}")
@@ -62,39 +103,7 @@ def run(source: str, window: str, show_fps: bool) -> int:
                 fit_window(window, reader.frame_width, reader.frame_height)
 
             try:
-                for frame in reader:
-                    now = time.perf_counter()
-                    elapsed = now - previous_time
-                    previous_time = now
-                    if elapsed > 0:
-                        instant_fps = 1.0 / elapsed
-                        smoothed_fps = (
-                            instant_fps
-                            if smoothed_fps == 0
-                            else 0.9 * smoothed_fps + 0.1 * instant_fps
-                        )
-
-                    if show_fps:
-                        cv2.putText(
-                            frame,
-                            f"FPS {smoothed_fps:5.1f}",
-                            (10, 30),
-                            cv2.FONT_HERSHEY_SIMPLEX,
-                            0.8,
-                            (0, 255, 0),
-                            2,
-                            cv2.LINE_AA,
-                        )
-
-                    cv2.imshow(window, frame)
-                    key = cv2.waitKey(delay) & 0xFF
-                    if key in (ord("q"), 27):
-                        break
-
-                    if is_window_open(window):
-                        window_seen = True
-                    elif window_seen:
-                        break
+                _play_frames(reader, window, delay, show_fps)
             except OSError as exc:
                 print(f"Lecture interrompue : {exc}", file=sys.stderr)
                 return 1

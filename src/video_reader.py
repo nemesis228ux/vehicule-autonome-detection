@@ -31,7 +31,7 @@ class VideoReader:
         self.frame_count = int(self._capture.get(cv2.CAP_PROP_FRAME_COUNT))
 
     @staticmethod
-    def _normalize_source(source: VideoSource) -> tuple[Union[int, str], bool]:
+    def _normalize_source(source: VideoSource) -> tuple[int | str, bool]:
         if isinstance(source, bool):
             raise ValueError("L'identifiant de caméra doit être un entier positif.")
 
