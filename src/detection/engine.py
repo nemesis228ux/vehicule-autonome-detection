@@ -61,6 +61,13 @@ class Detector:
         return str(path)
 
     def _load_model(self) -> Any:
+        model_path = Path(self.model_name)
+        if model_path.is_file() and model_path.stat().st_size == 0:
+            raise OSError(
+                f"Le fichier de modèle est vide : {model_path}. "
+                "Fournissez un checkpoint YOLO valide."
+            )
+
         try:
             from ultralytics import YOLO
         except ImportError as exc:
@@ -82,9 +89,13 @@ class Detector:
         class_ids = [
             int(class_id)
             for class_id, name in items
-            if str(name) in self.class_map
+            if self._normalize_class_name(name) in self.class_map
         ]
         return sorted(set(class_ids)) or None
+
+    @staticmethod
+    def _normalize_class_name(name: Any) -> str:
+        return " ".join(str(name).strip().lower().replace("_", " ").split())
 
     def detect(self, frame: np.ndarray) -> List[Detection]:
         """Détecte les objets d'une frame BGR et renvoie les objets retenus."""
@@ -211,7 +222,7 @@ class Detector:
 
         class_id_value = int(class_id)
         class_name = self._class_name(names, class_id_value)
-        category = self.class_map.get(class_name)
+        category = self.class_map.get(self._normalize_class_name(class_name))
         if category is None:
             if self.road_only:
                 return None

@@ -149,6 +149,22 @@ class RiskEvaluatorTests(unittest.TestCase):
         self.assertEqual(summary.level, DangerLevel.ATTENTION)
         self.assertIn("traversee imminente", summary.primary.reasons)
 
+    def test_animal_is_treated_as_vulnerable_road_user(self):
+        evaluator = RiskEvaluator(self.config())
+        obj = make_object(
+            category="animal",
+            center_x=1100,
+            y2=550,
+            height=180,
+            width=80,
+            vx=-25.0,
+        )
+
+        summary = evaluator.evaluate([obj], FRAME_SHAPE, FPS)
+
+        self.assertEqual(summary.level, DangerLevel.ATTENTION)
+        self.assertIn("usager vulnerable", summary.primary.reasons)
+
     def test_pothole_ahead_becomes_critical(self):
         evaluator = RiskEvaluator(self.config())
         levels = [

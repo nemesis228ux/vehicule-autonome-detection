@@ -13,6 +13,7 @@ Ce projet développe un système de perception capable de détecter en temps ré
 - Piétons
 - Motos / deux-roues (*zemidjans*)
 - Véhicules
+- Animaux courants du modèle COCO (chien, chat, cheval, etc.)
 - Nids-de-poule
 
 ### Fonctionnalités
@@ -171,8 +172,9 @@ models\yolov8n.pt
 ```
 
 Vous n'avez pas besoin de passer `--model` pour le modèle par défaut. Pour
-utiliser un modèle différent (par exemple vos poids entraînés `best.pt`),
-placez-le dans `models\` et indiquez son chemin :
+utiliser un modèle entraîné différent (par exemple un checkpoint réellement
+exporté sous le nom `best.pt`), placez le fichier `.pt` non vide dans `models\`
+et indiquez son chemin :
 
 ```powershell
 python -m src.main --source data/videos/route.mp4 --model models\best.pt
@@ -181,7 +183,24 @@ python -m src.main --source data/videos/route.mp4 --model models\best.pt
 Les poids ne sont pas versionnés par Git (`.gitignore`). Si le fichier local
 est absent, Ultralytics peut tenter de télécharger `yolov8n.pt` au premier
 lancement. Le modèle général pré-entraîné ne reconnaît pas nécessairement les
-nids-de-poule : cette classe demande un modèle entraîné pour cela.
+nids-de-poule : le fichier `models\yolov8n.pt` fourni contient les 80 classes
+COCO, et aucune classe nid-de-poule. Les animaux courants (oiseau, chat, chien,
+cheval, mouton, vache, éléphant, ours, zèbre et girafe) sont présents dans ce
+modèle et filtrés comme catégorie `animal`.
+
+Pour détecter les nids-de-poule, il faut entraîner ou obtenir un modèle YOLO
+dont les classes incluent cette catégorie, avec des images annotées de
+nids-de-poule. Le nom `best.pt` ci-dessous est un exemple : ce fichier n'est
+pas fourni par le dépôt. Il faut d'abord l'obtenir après entraînement, puis
+placer ses vrais poids dans `models\` :
+
+```powershell
+python -m src.main --source data/videos/route.mp4 --model models\best.pt --alerts
+```
+
+Le nom de classe du modèle doit être `pothole`, `potholes`, `nid de poule`,
+`nid-de-poule` ou `nid_de_poule` (la casse est ignorée). Le dépôt ne contient
+pas de jeu d'images annotées ni de poids entraînés pour les nids-de-poule.
 
 ### 5.3 Fournir la vidéo
 
@@ -242,7 +261,7 @@ Commandes pendant l'exécution :
 | `--conf` | Seuil de confiance (défaut : `0.35`) |
 | `--iou` | Seuil IoU du NMS (défaut : `0.45`) |
 | `--imgsz` | Taille d'inférence (défaut : `640`, `320` peut être plus rapide sur CPU) |
-| `--all-classes` | Conserve aussi les classes hors catégories routières |
+| `--all-classes` | Conserve toutes les classes du modèle, même hors catégories prévues |
 | `--track` | Active ByteTrack et les IDs |
 | `--risk` | Active le risque et le HUD (implique `--track`) |
 | `--alerts` | Active les alertes visuelles et sonores (implique `--risk`) |

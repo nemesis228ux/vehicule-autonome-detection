@@ -11,6 +11,7 @@ CATEGORY_LABELS: Dict[str, str] = {
     "pieton": "Pieton",
     "deux_roues": "Deux-roues",
     "vehicule": "Vehicule",
+    "animal": "Animal",
     "nid_de_poule": "Nid-de-poule",
     "autre": "Objet",
 }
