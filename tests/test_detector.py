@@ -1,4 +1,5 @@
 import unittest
+import os
 import tempfile
 from pathlib import Path
 
@@ -63,6 +64,18 @@ def make_detector(boxes, names, ids=None, **kwargs):
 
 
 class DetectorTests(unittest.TestCase):
+    def test_default_model_download_path_is_inside_models(self):
+        with tempfile.TemporaryDirectory() as directory:
+            previous_directory = os.getcwd()
+            os.chdir(directory)
+            try:
+                self.assertEqual(
+                    Detector._resolve_model_name("yolov8n.pt"),
+                    str(Path("models") / "yolov8n.pt"),
+                )
+            finally:
+                os.chdir(previous_directory)
+
     def test_empty_model_file_reports_clear_error(self):
         with tempfile.TemporaryDirectory() as directory:
             model_path = Path(directory) / "best.pt"

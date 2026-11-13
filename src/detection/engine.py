@@ -58,6 +58,9 @@ class Detector:
         if local_model.is_file():
             return str(local_model)
 
+        if path.name == DEFAULT_MODEL:
+            return str(local_model)
+
         return str(path)
 
     def _load_model(self) -> Any:

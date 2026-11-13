@@ -172,37 +172,125 @@ models\yolov8n.pt
 ```
 
 Vous n'avez pas besoin de passer `--model` pour le modèle par défaut. Pour
-utiliser un modèle entraîné différent (par exemple un checkpoint réellement
-exporté sous le nom `best.pt`), placez le fichier `.pt` non vide dans `models\`
-et indiquez son chemin :
+utiliser un modèle entraîné différent, placez son fichier `.pt` non vide dans
+`models\` et indiquez son chemin. Le modèle de nids-de-poule du projet sera
+nommé `pothole.pt` :
 
 ```powershell
-python -m src.main --source data/videos/route.mp4 --model models\best.pt
+python -m src.main --source data/videos/route.mp4 --model models\pothole.pt
 ```
 
-Les poids ne sont pas versionnés par Git (`.gitignore`). Si le fichier local
-est absent, Ultralytics peut tenter de télécharger `yolov8n.pt` au premier
+Les poids ne sont pas versionnés par Git (`.gitignore`). Si
+`models\yolov8n.pt` est absent, l'application demande à Ultralytics de
+télécharger le modèle par défaut directement à cet emplacement au premier
 lancement. Le modèle général pré-entraîné ne reconnaît pas nécessairement les
 nids-de-poule : le fichier `models\yolov8n.pt` fourni contient les 80 classes
 COCO, et aucune classe nid-de-poule. Les animaux courants (oiseau, chat, chien,
 cheval, mouton, vache, éléphant, ours, zèbre et girafe) sont présents dans ce
 modèle et filtrés comme catégorie `animal`.
 
-Pour détecter les nids-de-poule, il faut entraîner ou obtenir un modèle YOLO
-dont les classes incluent cette catégorie, avec des images annotées de
-nids-de-poule. Le nom `best.pt` ci-dessous est un exemple : ce fichier n'est
-pas fourni par le dépôt. Il faut d'abord l'obtenir après entraînement, puis
-placer ses vrais poids dans `models\` :
-
-```powershell
-python -m src.main --source data/videos/route.mp4 --model models\best.pt --alerts
-```
-
 Le nom de classe du modèle doit être `pothole`, `potholes`, `nid de poule`,
 `nid-de-poule` ou `nid_de_poule` (la casse est ignorée). Le dépôt ne contient
 pas de jeu d'images annotées ni de poids entraînés pour les nids-de-poule.
 
-### 5.3 Fournir la vidéo
+### 5.3 Entraîner le modèle de nids-de-poule
+
+Le dataset utilisé pour cette étape est disponible sur Kaggle :
+
+<https://www.kaggle.com/datasets/varadpisale/pothole-detection-dataset-annotated-yolov8>
+
+Il contient une seule classe, `pothole`, avec des images et leurs annotations
+YOLO. Le fichier [dataset\data.yaml](dataset/data.yaml) doit se trouver dans
+le dossier `dataset\` et contient les chemins vers `train\`, `valid\` et
+`test\`.
+
+#### Télécharger le dataset
+
+Deux méthodes sont possibles :
+
+1. Télécharger l'archive depuis la page Kaggle, puis la décompresser dans la
+   racine du projet.
+2. Utiliser l'API Kaggle. Après avoir configuré un jeton Kaggle dans
+   `%USERPROFILE%\.kaggle\kaggle.json` :
+
+```powershell
+python -m pip install kaggle
+kaggle datasets download -d varadpisale/pothole-detection-dataset-annotated-yolov8 -p .\dataset-download
+Expand-Archive ".\dataset-download\pothole-detection-dataset-annotated-yolov8.zip" -DestinationPath .\dataset
+```
+
+Après décompression, vérifiez que cette structure existe :
+
+```text
+dataset\
+├── data.yaml
+├── train\images\
+├── train\labels\
+├── valid\images\
+├── valid\labels\
+├── test\images\
+└── test\labels\
+```
+
+Si l'archive crée un dossier supplémentaire, déplacez son contenu afin que
+`data.yaml` soit directement dans `dataset\`. Le dataset est volumineux :
+prévoyez plusieurs gigaoctets d'espace libre.
+
+#### Choisir la machine d'entraînement
+
+L'entraînement utilise beaucoup de calculs. Une machine sans carte graphique
+peut entraîner le modèle, mais cela peut être très long et saturer le
+processeur. Il est préférable d'utiliser un ordinateur avec GPU compatible
+CUDA, Google Colab ou Kaggle Notebooks. L'application finale, elle, peut
+continuer à fonctionner sur CPU avec le modèle déjà entraîné.
+
+Depuis la racine du projet, avec l'environnement virtuel activé :
+
+```powershell
+yolo detect train model=models\yolov8n.pt data=dataset\data.yaml epochs=50 imgsz=640 batch=8
+```
+
+Pour un GPU NVIDIA, `device=0` peut être ajouté. Sur une machine CPU peu
+puissante, réduisez la charge avec `batch=2 workers=0`, mais l'entraînement
+sera plus lent :
+
+```powershell
+yolo detect train model=models\yolov8n.pt data=dataset\data.yaml epochs=30 imgsz=640 batch=2 device=cpu workers=0
+```
+
+Le meilleur modèle est généralement créé ici :
+
+```text
+runs\detect\train\weights\best.pt
+```
+
+Copiez-le sous le nom choisi par le projet :
+
+```powershell
+Copy-Item "runs\detect\train\weights\best.pt" "models\pothole.pt"
+```
+
+Avant de supprimer le dataset, évaluez le modèle sur les données de test :
+
+```powershell
+yolo detect val model=models\pothole.pt data=dataset\data.yaml split=test imgsz=640
+```
+
+Le dataset peut ensuite être supprimé si vous avez conservé un modèle valide
+et ne prévoyez pas de réentraîner. Gardez-le pour améliorer le modèle ou
+reproduire l'entraînement.
+
+Enfin, lancez la détection :
+
+```powershell
+python -m src.main --source data/videos/route.mp4 --model models\pothole.pt --alerts
+```
+
+Ce modèle est entraîné uniquement sur la classe `pothole`. Il détectera donc
+les nids-de-poule, mais pas les animaux. Pour les animaux, utilisez
+`models\yolov8n.pt` ou prévoyez plus tard un modèle combiné.
+
+### 5.4 Fournir la vidéo
 
 Placez votre propre vidéo dans `data\videos\`. Les médias de test ne sont pas
 versionnés par Git ; le dépôt ne fournit pas de vidéo d'exemple.
