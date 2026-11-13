@@ -15,7 +15,7 @@ try:
         RiskAssessment,
         RiskSummary,
     )
-    from src.tracker import TrackedObject
+    from src.tracker import TrackedObject, image_motion_label
 except ModuleNotFoundError:
     from risk.models import (
         DANGER_COLORS,
@@ -24,11 +24,10 @@ except ModuleNotFoundError:
         RiskAssessment,
         RiskSummary,
     )
-    from tracker import TrackedObject
+    from tracker import TrackedObject, image_motion_label
 
 from .hud_components import (
     _blend_rect,
-    _draw_legend,
     _draw_panel,
     _fit_text,
 )
@@ -46,16 +45,23 @@ def draw_risk_hud(
     if frame is None or frame.size == 0:
         raise ValueError("La frame est vide.")
 
-    frame_height, frame_width = frame.shape[:2]
+    _, frame_width = frame.shape[:2]
     scale = max(0.4, min(0.8, frame_width / 1280.0))
     compact = frame_width < 480
     objects_by_id = {obj.track_id: obj for obj in objects}
+    movement_by_id = {
+        obj.track_id: image_motion_label(
+            obj, frame.shape, compact=compact
+        )
+        for obj in objects
+    }
 
     for assessment in summary.assessments:
         _draw_assessment(
             frame,
             assessment,
             objects_by_id.get(assessment.track_id),
+            movement_by_id.get(assessment.track_id, "--"),
             scale,
             compact,
             frame_index,
@@ -63,9 +69,7 @@ def draw_risk_hud(
 
     _draw_banner(frame, summary, fps, scale, compact)
     if not compact and summary.assessments:
-        _draw_panel(frame, summary, scale)
-    if not compact and frame_height >= 360:
-        _draw_legend(frame, scale)
+        _draw_panel(frame, summary, scale, movement_by_id)
 
     return frame
 
@@ -74,6 +78,7 @@ def _draw_assessment(
     frame: np.ndarray,
     assessment: RiskAssessment,
     obj: Optional[TrackedObject],
+    movement: str,
     scale: float,
     compact: bool,
     frame_index: int,
@@ -110,11 +115,20 @@ def _draw_assessment(
 
     category = CATEGORY_LABELS.get(assessment.category, assessment.category)
     if compact:
-        label = f"#{assessment.track_id}"
+        label = f"#{assessment.track_id} IMG {movement}"
     else:
-        label = f"#{assessment.track_id} {category}"
-        if assessment.ttc is not None:
-            label += f" {assessment.ttc:.1f}s"
+        label = f"#{assessment.track_id} {category} | IMG {movement}"
+        available_width = max(frame.shape[1] - max(detection.x1, 0) - 6, 1)
+        label_width = cv2.getTextSize(
+            label, cv2.FONT_HERSHEY_SIMPLEX, scale, 1
+        )[0][0]
+        if label_width > available_width:
+            label = (
+                f"#{assessment.track_id} IMG "
+                f"{image_motion_label(obj, frame.shape, compact=True)}"
+                if obj is not None
+                else f"#{assessment.track_id} IMG --"
+            )
 
     _draw_label(frame, label, detection.x1, detection.y1, color, scale)
 
@@ -127,6 +141,8 @@ def _draw_label(
     color: tuple[int, int, int],
     scale: float,
 ) -> None:
+    available_width = max(frame.shape[1] - max(x, 0) - 6, 1)
+    label = _fit_text(label, available_width, scale, 1)
     (text_width, text_height), baseline = cv2.getTextSize(
         label, cv2.FONT_HERSHEY_SIMPLEX, scale, 1
     )
@@ -215,20 +231,19 @@ def _draw_banner(
 def _status_message(summary: RiskSummary, compact: bool) -> str:
     primary = summary.primary
     if primary is None:
-        return "Aucun danger immediat"
+        return "0 OBJET DETECTE" if compact else "AUCUN OBJET DETECTE"
 
     if summary.level == DangerLevel.INFORMATION:
         if compact:
-            return "OK"
-        return f"Surveillance - {len(summary.assessments)} objet(s)"
+            return f"{len(summary.assessments)} OBJET(S) - OK"
+        return (
+            f"{len(summary.assessments)} OBJET(S) - "
+            "AUCUN RISQUE ESTIME"
+        )
 
     category = CATEGORY_LABELS.get(primary.category, primary.category)
     level = DANGER_LABELS[summary.level]
     if compact:
         return f"{level} #{primary.track_id}"
 
-    message = f"{level} - {category} #{primary.track_id}"
-    if primary.ttc is not None:
-        message += f" - TTC {primary.ttc:.1f} s"
-    return message
-
+    return f"{level} - {category} #{primary.track_id}"

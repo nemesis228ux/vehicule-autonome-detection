@@ -1,4 +1,7 @@
 import unittest
+import os
+import tempfile
+from pathlib import Path
 
 import numpy as np
 
@@ -61,7 +64,27 @@ def make_detector(boxes, names, ids=None, **kwargs):
 
 
 class DetectorTests(unittest.TestCase):
-    def test_keeps_road_classes_and_maps_categories(self):
+    def test_default_model_download_path_is_inside_models(self):
+        with tempfile.TemporaryDirectory() as directory:
+            previous_directory = os.getcwd()
+            os.chdir(directory)
+            try:
+                self.assertEqual(
+                    Detector._resolve_model_name("yolov8n.pt"),
+                    str(Path("models") / "yolov8n.pt"),
+                )
+            finally:
+                os.chdir(previous_directory)
+
+    def test_empty_model_file_reports_clear_error(self):
+        with tempfile.TemporaryDirectory() as directory:
+            model_path = Path(directory) / "best.pt"
+            model_path.touch()
+
+            with self.assertRaisesRegex(OSError, "fichier de modèle est vide"):
+                Detector(model_name=str(model_path))
+
+    def test_keeps_supported_road_and_animal_classes(self):
         boxes = [
             [10, 20, 110, 220, 0.9, 0],
             [50, 60, 150, 160, 0.8, 2],
@@ -73,8 +96,12 @@ class DetectorTests(unittest.TestCase):
 
         detections = detector.detect(frame)
 
-        self.assertEqual([d.category for d in detections], ["pieton", "vehicule"])
+        self.assertEqual(
+            [d.category for d in detections],
+            ["pieton", "vehicule", "animal"],
+        )
         self.assertEqual(detections[0].class_name, "person")
+        self.assertEqual(detections[2].class_name, "dog")
 
     def test_confidence_threshold_filters_results(self):
         boxes = [[0, 0, 10, 10, 0.2, 0], [0, 0, 10, 10, 0.9, 0]]
@@ -90,7 +117,7 @@ class DetectorTests(unittest.TestCase):
 
     def test_all_classes_keeps_unknown_as_autre(self):
         detector, _ = make_detector(
-            [[0, 0, 5, 5, 0.9, 16]], {16: "dog"}, road_only=False
+            [[0, 0, 5, 5, 0.9, 99]], {99: "traffic_cone"}, road_only=False
         )
 
         detections = detector.detect(np.zeros((20, 20, 3), dtype=np.uint8))
@@ -111,6 +138,24 @@ class DetectorTests(unittest.TestCase):
             (0, 0, 199, 99),
         )
         self.assertEqual(detection.category, "nid_de_poule")
+
+    def test_custom_class_names_are_normalized(self):
+        boxes = [[0, 0, 10, 10, 0.9, 0]]
+        detector, _ = make_detector(boxes, {0: "Pothole"})
+
+        detections = detector.detect(np.zeros((20, 20, 3), dtype=np.uint8))
+
+        self.assertEqual(detections[0].category, "nid_de_poule")
+
+    def test_only_models_with_pothole_class_filter_in_that_class(self):
+        detector, model = make_detector(
+            np.empty((0, 6)),
+            {0: "person", 16: "dog", 80: "Pothole"},
+        )
+
+        detector.detect(np.zeros((20, 20, 3), dtype=np.uint8))
+
+        self.assertEqual(model.kwargs["classes"], [0, 16, 80])
 
     def test_max_detections_limits_output(self):
         boxes = [[0, 0, 10, 10, 0.9, 0] for _ in range(5)]
@@ -147,14 +192,14 @@ class DetectorTests(unittest.TestCase):
         self.assertEqual(model.kwargs["imgsz"], 320)
         self.assertFalse(model.kwargs["verbose"])
 
-    def test_detect_filters_classes_at_model_level(self):
+    def test_detect_filters_supported_classes_at_model_level(self):
         detector, model = make_detector(
             np.empty((0, 6)), {0: "person", 2: "car", 16: "dog"}
         )
 
         detector.detect(np.zeros((20, 20, 3), dtype=np.uint8))
 
-        self.assertEqual(model.kwargs["classes"], [0, 2])
+        self.assertEqual(model.kwargs["classes"], [0, 2, 16])
 
     def test_all_classes_removes_model_class_filter(self):
         detector, model = make_detector(
@@ -172,7 +217,7 @@ class DetectorTests(unittest.TestCase):
 
         detector.track(np.zeros((20, 20, 3), dtype=np.uint8))
 
-        self.assertEqual(model.track_kwargs["classes"], [0, 2])
+        self.assertEqual(model.track_kwargs["classes"], [0, 2, 16])
 
     def test_detect_rejects_empty_frame(self):
         detector, _ = make_detector(np.empty((0, 6)), {})

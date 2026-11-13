@@ -33,12 +33,13 @@ DANGER_LABELS: Dict[DangerLevel, str] = {
 CATEGORY_WEIGHTS: Dict[str, float] = {
     "pieton": 1.0,
     "deux_roues": 0.95,
+    "animal": 0.9,
     "nid_de_poule": 0.85,
     "vehicule": 0.7,
     "autre": 0.3,
 }
 
-VRU_CATEGORIES = frozenset({"pieton", "deux_roues"})
+VRU_CATEGORIES = frozenset({"pieton", "deux_roues", "animal"})
 POTHOLE_CATEGORIES = frozenset({"nid_de_poule"})
 
 

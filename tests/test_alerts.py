@@ -29,10 +29,14 @@ class FakeSoundBackend:
     def __init__(self, available=True):
         self.available = available
         self.played = []
+        self.stop_count = 0
         self.closed = False
 
     def play(self, pattern):
         self.played.append(pattern)
+
+    def stop(self):
+        self.stop_count += 1
 
     def close(self):
         self.closed = True
@@ -169,6 +173,27 @@ class AlertManagerTests(unittest.TestCase):
         self.assertIsNone(released.sound)
         self.assertEqual(backend.played, [CRITICAL_SOUND])
 
+    def test_empty_scene_clears_alert_and_stops_sound_immediately(self):
+        manager, backend = self.make_manager(release_frames=10)
+        manager.update(make_summary(DangerLevel.CRITIQUE), now_s=0.0)
+        empty_scene = RiskSummary(
+            DangerLevel.INFORMATION,
+            None,
+            (),
+            {level: 0 for level in DangerLevel},
+        )
+
+        event = manager.update(empty_scene, now_s=0.1)
+
+        self.assertEqual(event.level, DangerLevel.INFORMATION)
+        self.assertTrue(event.changed)
+        self.assertEqual(event.duration, 0.0)
+        self.assertEqual(backend.stop_count, 1)
+
+        repeated_empty = manager.update(empty_scene, now_s=0.2)
+        self.assertFalse(repeated_empty.changed)
+        self.assertEqual(backend.stop_count, 1)
+
     def test_mute_blocks_then_unmute_restores(self):
         backend = FakeSoundBackend()
         manager = AlertManager(sound_backend=backend, muted=True)
@@ -229,6 +254,10 @@ class SoundBackendTests(unittest.TestCase):
         backend.play(CRITICAL_SOUND)
         backend.close()
         self.assertFalse(backend.available)
+
+    def test_null_backend_can_stop(self):
+        backend = NullSoundBackend()
+        backend.stop()
 
     def test_winsound_backend_reports_missing_files(self):
         with tempfile.TemporaryDirectory() as directory:

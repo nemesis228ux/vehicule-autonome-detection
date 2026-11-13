@@ -13,6 +13,7 @@ Ce projet développe un système de perception capable de détecter en temps ré
 - Piétons
 - Motos / deux-roues (*zemidjans*)
 - Véhicules
+- Animaux courants du modèle COCO (chien, chat, cheval, etc.)
 - Nids-de-poule
 
 ### Fonctionnalités
@@ -171,19 +172,125 @@ models\yolov8n.pt
 ```
 
 Vous n'avez pas besoin de passer `--model` pour le modèle par défaut. Pour
-utiliser un modèle différent (par exemple vos poids entraînés `best.pt`),
-placez-le dans `models\` et indiquez son chemin :
+utiliser un modèle entraîné différent, placez son fichier `.pt` non vide dans
+`models\` et indiquez son chemin. Le modèle de nids-de-poule du projet sera
+nommé `pothole.pt` :
 
 ```powershell
-python -m src.main --source data/videos/route.mp4 --model models\best.pt
+python -m src.main --source data/videos/route.mp4 --model models\pothole.pt
 ```
 
-Les poids ne sont pas versionnés par Git (`.gitignore`). Si le fichier local
-est absent, Ultralytics peut tenter de télécharger `yolov8n.pt` au premier
+Les poids ne sont pas versionnés par Git (`.gitignore`). Si
+`models\yolov8n.pt` est absent, l'application demande à Ultralytics de
+télécharger le modèle par défaut directement à cet emplacement au premier
 lancement. Le modèle général pré-entraîné ne reconnaît pas nécessairement les
-nids-de-poule : cette classe demande un modèle entraîné pour cela.
+nids-de-poule : le fichier `models\yolov8n.pt` fourni contient les 80 classes
+COCO, et aucune classe nid-de-poule. Les animaux courants (oiseau, chat, chien,
+cheval, mouton, vache, éléphant, ours, zèbre et girafe) sont présents dans ce
+modèle et filtrés comme catégorie `animal`.
 
-### 5.3 Fournir la vidéo
+Le nom de classe du modèle doit être `pothole`, `potholes`, `nid de poule`,
+`nid-de-poule` ou `nid_de_poule` (la casse est ignorée). Le dépôt ne contient
+pas de jeu d'images annotées ni de poids entraînés pour les nids-de-poule.
+
+### 5.3 Entraîner le modèle de nids-de-poule
+
+Le dataset utilisé pour cette étape est disponible sur Kaggle :
+
+<https://www.kaggle.com/datasets/varadpisale/pothole-detection-dataset-annotated-yolov8>
+
+Il contient une seule classe, `pothole`, avec des images et leurs annotations
+YOLO. Le fichier [dataset\data.yaml](dataset/data.yaml) doit se trouver dans
+le dossier `dataset\` et contient les chemins vers `train\`, `valid\` et
+`test\`.
+
+#### Télécharger le dataset
+
+Deux méthodes sont possibles :
+
+1. Télécharger l'archive depuis la page Kaggle, puis la décompresser dans la
+   racine du projet.
+2. Utiliser l'API Kaggle. Après avoir configuré un jeton Kaggle dans
+   `%USERPROFILE%\.kaggle\kaggle.json` :
+
+```powershell
+python -m pip install kaggle
+kaggle datasets download -d varadpisale/pothole-detection-dataset-annotated-yolov8 -p .\dataset-download
+Expand-Archive ".\dataset-download\pothole-detection-dataset-annotated-yolov8.zip" -DestinationPath .\dataset
+```
+
+Après décompression, vérifiez que cette structure existe :
+
+```text
+dataset\
+├── data.yaml
+├── train\images\
+├── train\labels\
+├── valid\images\
+├── valid\labels\
+├── test\images\
+└── test\labels\
+```
+
+Si l'archive crée un dossier supplémentaire, déplacez son contenu afin que
+`data.yaml` soit directement dans `dataset\`. Le dataset est volumineux :
+prévoyez plusieurs gigaoctets d'espace libre.
+
+#### Choisir la machine d'entraînement
+
+L'entraînement utilise beaucoup de calculs. Une machine sans carte graphique
+peut entraîner le modèle, mais cela peut être très long et saturer le
+processeur. Il est préférable d'utiliser un ordinateur avec GPU compatible
+CUDA, Google Colab ou Kaggle Notebooks. L'application finale, elle, peut
+continuer à fonctionner sur CPU avec le modèle déjà entraîné.
+
+Depuis la racine du projet, avec l'environnement virtuel activé :
+
+```powershell
+yolo detect train model=models\yolov8n.pt data=dataset\data.yaml epochs=50 imgsz=640 batch=8
+```
+
+Pour un GPU NVIDIA, `device=0` peut être ajouté. Sur une machine CPU peu
+puissante, réduisez la charge avec `batch=2 workers=0`, mais l'entraînement
+sera plus lent :
+
+```powershell
+yolo detect train model=models\yolov8n.pt data=dataset\data.yaml epochs=30 imgsz=640 batch=2 device=cpu workers=0
+```
+
+Le meilleur modèle est généralement créé ici :
+
+```text
+runs\detect\train\weights\best.pt
+```
+
+Copiez-le sous le nom choisi par le projet :
+
+```powershell
+Copy-Item "runs\detect\train\weights\best.pt" "models\pothole.pt"
+```
+
+Avant de supprimer le dataset, évaluez le modèle sur les données de test :
+
+```powershell
+yolo detect val model=models\pothole.pt data=dataset\data.yaml split=test imgsz=640
+```
+
+Le dataset peut ensuite être supprimé si vous avez conservé un modèle valide
+et ne prévoyez pas de réentraîner. Gardez-le pour améliorer le modèle ou
+reproduire l'entraînement.
+
+Enfin, lancez la détection :
+
+```powershell
+python -m src.main --source data/videos/route.mp4 --model models\pothole.pt --alerts
+```
+
+Ce modèle est entraîné uniquement sur la classe `pothole`. Il détectera donc
+les nids-de-poule, mais pas les animaux. Pour les animaux, utilisez
+`models\yolov8n.pt` ou prévoyez plus tard un modèle combiné.
+
+### 5.4 Fournir la vidéo
 
 Placez votre propre vidéo dans `data\videos\`. Les médias de test ne sont pas
 versionnés par Git ; le dépôt ne fournit pas de vidéo d'exemple.
@@ -219,10 +326,14 @@ Vous devez voir en plus :
 
 - les IDs ByteTrack et les trajectoires ;
 - le HUD `INFORMATION / ATTENTION / CRITIQUE` ;
-- le panneau des niveaux et la légende ;
+- le panneau de synthèse et le déplacement apparent dans l'image (`STABLE` ou `BOUGE`) ;
 - la bordure orange ou rouge selon le danger ;
 - le klaxon d'attention ou le triple klaxon critique ;
 - les FPS en haut de la fenêtre.
+
+Le déplacement affiché est relatif à l'image : le mouvement de la caméra peut
+aussi déplacer les objets à l'écran. Le HUD n'affiche pas de distance physique ;
+la caméra n'étant pas calibrée, le niveau de risque reste une estimation.
 
 Commandes pendant l'exécution :
 
@@ -238,7 +349,7 @@ Commandes pendant l'exécution :
 | `--conf` | Seuil de confiance (défaut : `0.35`) |
 | `--iou` | Seuil IoU du NMS (défaut : `0.45`) |
 | `--imgsz` | Taille d'inférence (défaut : `640`, `320` peut être plus rapide sur CPU) |
-| `--all-classes` | Conserve aussi les classes hors catégories routières |
+| `--all-classes` | Conserve toutes les classes du modèle, même hors catégories prévues |
 | `--track` | Active ByteTrack et les IDs |
 | `--risk` | Active le risque et le HUD (implique `--track`) |
 | `--alerts` | Active les alertes visuelles et sonores (implique `--risk`) |
@@ -284,29 +395,44 @@ python -m src.main --source 0 --alerts --imgsz 320
 
 Une application de caméra réseau doit être installée sur le téléphone. Elle
 fournit soit une caméra virtuelle (sélectionnée comme un index `0`, `1`, ...),
-soit une URL vidéo compatible avec OpenCV. Pour une URL, le téléphone et
-l'ordinateur doivent généralement être sur le même réseau Wi-Fi ; démarrez le
-flux dans l'application et utilisez l'adresse exacte qu'elle affiche. Le chemin
-(`/video`, `/mjpeg`, etc.) et le protocole dépendent de l'application.
+soit une URL vidéo compatible avec OpenCV. Pour **IP Webcam sur Android**,
+démarrez le serveur dans l'application et utilisez l'adresse IP et le port
+affichés, en ajoutant `/video` à l'URL. Par exemple, si l'application affiche
+`http://192.168.137.27:8080`, l'adresse du flux est :
+
+```text
+http://192.168.137.27:8080/video
+```
+
+La page racine `http://192.168.137.27:8080` est l'interface web de
+l'application, pas le flux vidéo. IP Webcam utilise généralement HTTP ; ne
+remplacez pas `http` par `https` sauf si vous avez configuré HTTPS dans
+l'application. Le téléphone et l'ordinateur doivent pouvoir communiquer sur le
+réseau local.
 
 Le lecteur vidéo accepte déjà les URL via OpenCV : aucun module Python
 supplémentaire ni code spécifique à l'application n'est requis. Depuis la racine
 du projet, lancez par exemple :
 
 ```powershell
-python -m src.main --source "http://ADRESSE_DU_TELEPHONE:PORT/video" --alerts --imgsz 320
+python -m src.main --source "http://192.168.137.27:8080/video" --alerts --imgsz 320
 ```
 
-Remplacez l'adresse et le chemin par ceux fournis par l'application du
-téléphone. Pour une caméra virtuelle, utilisez plutôt son index :
+Remplacez l'adresse IP et le port par ceux affichés par votre application.
+Pour tester le flux sans lancer la détection, utilisez `demo_video` :
+
+```powershell
+python -m src.demo_video --source "http://192.168.137.27:8080/video"
+```
+
+Pour une caméra virtuelle, utilisez plutôt son index :
 
 ```powershell
 python -m src.main --source 1 --alerts --imgsz 320
 ```
 
 Autorisez l'accès au réseau local dans le pare-feu si nécessaire. Pour valider
-le flux avant la détection, vous pouvez également lancer
-`python -m src.demo_video --source "URL_DU_FLUX"`.
+le flux avant la détection, lancez la commande `demo_video` ci-dessus.
 
 ### 5.9 Dépannage
 
@@ -338,6 +464,8 @@ python scripts/generate_horn.py
 - **Attention** : bordure orange stable + un coup de klaxon, avec rappel espacé.
 - **Critique** : bordure rouge clignotante + triple klaxon, avec rappel plus fréquent.
 - Une escalade Attention → Critique déclenche immédiatement le klaxon critique.
+- Dès qu'aucun objet n'est détecté, le niveau d'alerte revient immédiatement à
+  Information et le son en cours est arrêté.
 - Le son est asynchrone et ne bloque pas la boucle vidéo ; MCI est utilisé pour les MP3, `winsound` pour les WAV.
 - Hors Windows, ou si aucun fichier audio n'est disponible, les alertes restent visuelles.
 
@@ -351,7 +479,15 @@ python scripts/generate_horn.py
 | **Attention** | 🟠 Orange | Situation à surveiller | Objet qui se rapproche ou usager vulnérable en traversée |
 | **Information** | 🟢 Vert | Objet détecté sans risque immédiat estimé | Objet éloigné ou hors trajectoire |
 
-Le calcul s'appuie sur la position et la taille des objets dans l'image, leur suivi entre les frames, une estimation de proximité et le temps avant collision (TTC). Il s'agit d'heuristiques monoculaires dépendantes de la caméra et de la scène, pas d'une distance physique calibrée. La classe « nid-de-poule » nécessite un modèle qui a été entraîné à la détecter ; le modèle YOLO général fourni peut ne pas la reconnaître.
+Le calcul s'appuie sur la position et la taille des objets dans l'image, leur
+suivi entre les frames, une estimation de proximité et un indicateur temporel
+d'approche dérivé du changement apparent de taille ou de position. Ces valeurs
+sont des heuristiques monoculaires dépendantes de la caméra et de la scène :
+elles ne représentent ni une distance physique ni un temps de collision
+fiablement calibré. L'interface affiche le niveau estimé et le mouvement dans
+l'image, mais pas de distance en mètres. La classe « nid-de-poule » nécessite
+un modèle entraîné à la détecter ; le modèle YOLO général fourni peut ne pas la
+reconnaître.
 
 Le package `src/alerts/` transforme ces niveaux en alertes stables : debounce
 pour l'Attention, immédiateté pour le Critique, cooldowns pour éviter le spam,

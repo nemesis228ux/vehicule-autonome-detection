@@ -30,6 +30,9 @@ class SoundBackend(Protocol):
     def play(self, pattern: str) -> None:
         ...
 
+    def stop(self) -> None:
+        ...
+
     def close(self) -> None:
         ...
 
@@ -40,6 +43,9 @@ class NullSoundBackend:
     available = False
 
     def play(self, _pattern: str) -> None:
+        return None
+
+    def stop(self) -> None:
         return None
 
     def close(self) -> None:
@@ -138,9 +144,13 @@ class WinsoundBackend:
         except (OSError, RuntimeError):
             self._failed.add(pattern)
 
-    def close(self) -> None:
+    def stop(self) -> None:
+        """Stop any alert tone currently playing."""
         self._stop_winsound()
         self._stop_mci()
+
+    def close(self) -> None:
+        self.stop()
         for alias in self._mci_aliases.values():
             if self._mci_send is not None:
                 self._mci_send(f"close {alias}")

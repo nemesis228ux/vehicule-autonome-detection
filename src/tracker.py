@@ -43,6 +43,24 @@ class TrackedObject:
         return self.detection.category
 
 
+def image_motion_label(
+    obj: TrackedObject, frame_shape: Tuple[int, ...], compact: bool = False
+) -> str:
+    """Describe filtered displacement in the image, not real-world motion."""
+    if len(frame_shape) < 2:
+        raise ValueError("frame_shape doit contenir largeur et hauteur.")
+    frame_diagonal = float(hypot(frame_shape[1], frame_shape[0]))
+    threshold = max(1.5, frame_diagonal * 0.0015)
+    vx, vy = obj.velocity
+    if obj.speed < threshold:
+        return "STABLE"
+    if abs(vx) >= abs(vy):
+        direction = ">" if vx > 0 else "<"
+    else:
+        direction = "v" if vy > 0 else "^"
+    return f"{'MVT' if compact else 'BOUGE'} {direction}"
+
+
 @dataclass
 class _TrackState:
     center: Tuple[float, float]
@@ -168,6 +186,7 @@ def draw_tracks(
     show_trail: bool = True,
     labels: str = "full",
     font_scale: Optional[float] = None,
+    show_motion: bool = False,
 ) -> np.ndarray:
     """Dessine les objets suivis, leurs IDs et leurs trajectoires.
 
@@ -213,8 +232,32 @@ def draw_tracks(
                 f"#{obj.track_id} {detection.category} "
                 f"{detection.confidence:.0%}"
             )
+        if show_motion:
+            motion = f"IMG {image_motion_label(obj, frame.shape)}"
+            available_width = max(frame.shape[1] - detection.x1 - 4, 1)
+            full_label = f"{label} | {motion}"
+            full_width = cv2.getTextSize(
+                full_label, cv2.FONT_HERSHEY_SIMPLEX, scale, 1
+            )[0][0]
+            label = (
+                full_label
+                if full_width <= available_width
+                else (
+                    f"#{obj.track_id} IMG "
+                    f"{image_motion_label(obj, frame.shape, compact=True)}"
+                )
+            )
 
         (text_width, text_height), baseline = cv2.getTextSize(
+            label, cv2.FONT_HERSHEY_SIMPLEX, scale, 1
+        )
+        available_width = max(frame.shape[1] - detection.x1 - 4, 1)
+        while label and text_width > available_width:
+            label = label[:-1]
+            text_width = cv2.getTextSize(
+                label, cv2.FONT_HERSHEY_SIMPLEX, scale, 1
+            )[0][0]
+        (_, text_height), baseline = cv2.getTextSize(
             label, cv2.FONT_HERSHEY_SIMPLEX, scale, 1
         )
         label_top = max(detection.y1, text_height + baseline + 2)

@@ -73,7 +73,7 @@ def render_frame(
         if alert_event is not None:
             draw_alert_overlay(frame, alert_event)
     elif objects is not None:
-        draw_tracks(frame, objects, labels=args.labels)
+        draw_tracks(frame, objects, labels=args.labels, show_motion=True)
     else:
         draw_detections(frame, detections)
 

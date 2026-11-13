@@ -82,3 +82,10 @@ wandb/
 .env.local
 config.local.py
 secrets.json
+
+
+# =========================
+# Dataset et kaggle
+# =========================
+dataset/
+*.zip

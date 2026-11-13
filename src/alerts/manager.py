@@ -74,6 +74,28 @@ class AlertManager:
         changed = False
         triggered = False
 
+        if (
+            target == DangerLevel.INFORMATION
+            and not summary.assessments
+            and not any(summary.counts.values())
+        ):
+            changed = self._active_level != DangerLevel.INFORMATION
+            if changed:
+                self._backend.stop()
+            self._active_level = DangerLevel.INFORMATION
+            self._pending_level = DangerLevel.INFORMATION
+            self._pending_frames = 0
+            self._release_frames = 0
+            self._since = 0.0
+            return AlertEvent(
+                level=DangerLevel.INFORMATION,
+                changed=changed,
+                sound=None,
+                muted=self._muted,
+                flash_on=False,
+                duration=0.0,
+            )
+
         if target > self._active_level:
             self._release_frames = 0
             if target == DangerLevel.CRITIQUE:
