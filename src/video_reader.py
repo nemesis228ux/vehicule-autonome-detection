@@ -11,6 +11,8 @@ import cv2
 import numpy as np
 
 VideoSource = Union[int, str, PathLike[str]]
+IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+ANIMATED_IMAGE_SUFFIXES = {".gif"}
 
 
 class VideoReader:
@@ -19,6 +21,21 @@ class VideoReader:
     def __init__(self, source: VideoSource) -> None:
         self.source = source
         self._capture_source, self.is_live = self._normalize_source(source)
+        self._still_frames: list[np.ndarray] = []
+        self._still_frame_index = 0
+        self._capture = None
+
+        source_path = (
+            Path(str(self._capture_source)).expanduser()
+            if isinstance(self._capture_source, str)
+            else None
+        )
+        if source_path is not None and source_path.suffix.lower() in (
+            IMAGE_SUFFIXES | ANIMATED_IMAGE_SUFFIXES
+        ):
+            self._load_image_source(source_path)
+            return
+
         self._capture = cv2.VideoCapture(self._capture_source)
 
         if not self._capture.isOpened():
@@ -56,8 +73,53 @@ class VideoReader:
             raise FileNotFoundError(f"Fichier vidéo introuvable : {path}")
         return str(path), False
 
+    def _load_image_source(self, path: Path) -> None:
+        if path.suffix.lower() == ".gif":
+            self._load_gif(path)
+            return
+
+        frame = cv2.imread(str(path), cv2.IMREAD_COLOR)
+        if frame is None:
+            raise OSError(f"Impossible de lire l'image : {path}")
+        self._still_frames = [frame]
+        self.fps = 0.0
+        self.frame_height, self.frame_width = frame.shape[:2]
+        self.frame_count = 1
+
+    def _load_gif(self, path: Path) -> None:
+        try:
+            from PIL import Image
+        except ImportError as exc:
+            raise ImportError("Pillow est requis pour lire les fichiers GIF.") from exc
+
+        try:
+            with Image.open(path) as gif:
+                duration = float(gif.info.get("duration", 100) or 100)
+                for frame_index in range(gif.n_frames):
+                    gif.seek(frame_index)
+                    rgb = gif.convert("RGB")
+                    bgr = cv2.cvtColor(np.asarray(rgb), cv2.COLOR_RGB2BGR)
+                    self._still_frames.append(bgr)
+        except (OSError, ValueError) as exc:
+            raise OSError(f"Impossible de lire le GIF : {path}") from exc
+
+        if not self._still_frames:
+            raise OSError(f"Le GIF ne contient aucune frame : {path}")
+
+        first = self._still_frames[0]
+        self.fps = max(1.0, 1000.0 / duration)
+        self.frame_height, self.frame_width = first.shape[:2]
+        self.frame_count = len(self._still_frames)
+
     def read(self) -> Optional[np.ndarray]:
         """Return the next BGR frame, or None when a video file reaches EOF."""
+        if self._still_frames:
+            if self._still_frame_index >= len(self._still_frames):
+                return None
+            frame = self._still_frames[self._still_frame_index]
+            self._still_frame_index += 1
+            return frame
+
         if self._capture is None or not self._capture.isOpened():
             raise RuntimeError("La source vidéo est fermée.")
 
@@ -80,7 +142,9 @@ class VideoReader:
             self.release()
 
     def __enter__(self) -> VideoReader:
-        if self._capture is None or not self._capture.isOpened():
+        if not self._still_frames and (
+            self._capture is None or not self._capture.isOpened()
+        ):
             raise RuntimeError("La source vidéo est fermée.")
         return self
 

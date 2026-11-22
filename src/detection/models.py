@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Dict, Optional
 
 ROAD_CLASS_MAP: Dict[str, str] = {
+    "0": "nid_de_poule",
     "person": "pieton",
     "bicycle": "deux_roues",
     "motorcycle": "deux_roues",

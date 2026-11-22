@@ -68,14 +68,36 @@ def _print_reader_info(args, reader, tracker, risk_evaluator, alert_manager) -> 
         print(f"Alertes    : actives (son {sound_state})")
     print(f"Résolution : {reader.frame_width}x{reader.frame_height}")
     delay = 1
+    if not reader.is_live and reader.fps == 0:
+        print("Type       : image fixe")
+        return 0
     if not reader.is_live and reader.fps > 0:
         delay = max(1, round(1000 / reader.fps))
         print(f"FPS source : {reader.fps:.1f}")
     return delay
 
 
+def _static_output_path(args, reader, alert_manager, risk_evaluator, tracker) -> Optional[Path]:
+    if not args.save:
+        return None
+    output_dir = Path("outputs")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    source_name = Path(str(args.source)).stem
+    if alert_manager is not None:
+        suffix = "_alertes"
+    elif risk_evaluator is not None:
+        suffix = "_risque"
+    elif tracker is not None:
+        suffix = "_tracke"
+    else:
+        suffix = "_detecte"
+    return output_dir / f"{source_name}{suffix}.jpg"
+
+
 def _create_writer(args, reader, alert_manager, risk_evaluator, tracker):
     if not args.save:
+        return None, None
+    if not reader.is_live and reader.fps == 0:
         return None, None
     output_dir = Path("outputs")
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -100,6 +122,75 @@ def _create_writer(args, reader, alert_manager, risk_evaluator, tracker):
     return writer, output_path
 
 
+def _process_frames(
+    args,
+    reader,
+    detector,
+    tracker,
+    risk_evaluator,
+    alert_manager,
+    delay,
+    writer,
+    output_path,
+    stats,
+    start_time,
+):
+    static_output_path = _static_output_path(
+        args, reader, alert_manager, risk_evaluator, tracker
+    )
+    smoothed_fps = 0.0
+    frame_count = 0
+    window_seen = False
+    previous_time = start_time
+
+    for frame in reader:
+        frame_count += 1
+        objects = tracker.update(frame) if tracker is not None else None
+        detections = None if tracker is not None else detector.detect(frame)
+        if objects is not None:
+            stats.tracked_ids.update(obj.track_id for obj in objects)
+        now = time.perf_counter()
+        smoothed_fps = update_fps(now, previous_time, smoothed_fps)
+        previous_time = now
+        render_frame(
+            frame,
+            objects,
+            detections,
+            risk_evaluator,
+            alert_manager,
+            args,
+            stats,
+            smoothed_fps,
+            frame_count,
+            now,
+            reader.fps,
+        )
+        if writer is not None:
+            writer.write(frame)
+        if static_output_path is not None:
+            if not cv2.imwrite(str(static_output_path), frame):
+                raise OSError(
+                    f"Impossible d'enregistrer l'image : {static_output_path}"
+                )
+            output_path = static_output_path
+        cv2.imshow(args.window, frame)
+        key = cv2.waitKey(delay) & 0xFF
+        if handle_frame_key(key, alert_manager):
+            break
+        if is_window_open(args.window):
+            window_seen = True
+        elif window_seen:
+            break
+
+    if not reader.is_live and reader.fps == 0:
+        while is_window_open(args.window):
+            key = cv2.waitKey(100) & 0xFF
+            if handle_frame_key(key, alert_manager):
+                break
+
+    return frame_count, output_path
+
+
 def run(args: argparse.Namespace) -> int:
     writer: Optional[cv2.VideoWriter] = None
     output_path: Optional[Path] = None
@@ -107,11 +198,7 @@ def run(args: argparse.Namespace) -> int:
     risk_evaluator: Optional[RiskEvaluator] = None
     alert_manager: Optional[AlertManager] = None
     stats = RunStats()
-    smoothed_fps = 0.0
-    frame_count = 0
-    window_seen = False
     start_time = time.perf_counter()
-    previous_time = start_time
 
     try:
         detector, tracker, risk_evaluator, alert_manager = _create_components(args)
@@ -126,39 +213,19 @@ def run(args: argparse.Namespace) -> int:
             writer, output_path = _create_writer(
                 args, reader, alert_manager, risk_evaluator, tracker
             )
-
-            for frame in reader:
-                frame_count += 1
-                objects = tracker.update(frame) if tracker is not None else None
-                detections = None if tracker is not None else detector.detect(frame)
-                if objects is not None:
-                    stats.tracked_ids.update(obj.track_id for obj in objects)
-                now = time.perf_counter()
-                smoothed_fps = update_fps(now, previous_time, smoothed_fps)
-                previous_time = now
-                render_frame(
-                    frame,
-                    objects,
-                    detections,
-                    risk_evaluator,
-                    alert_manager,
-                    args,
-                    stats,
-                    smoothed_fps,
-                    frame_count,
-                    now,
-                    reader.fps,
-                )
-                if writer is not None:
-                    writer.write(frame)
-                cv2.imshow(args.window, frame)
-                key = cv2.waitKey(delay) & 0xFF
-                if handle_frame_key(key, alert_manager):
-                    break
-                if is_window_open(args.window):
-                    window_seen = True
-                elif window_seen:
-                    break
+            frame_count, output_path = _process_frames(
+                args,
+                reader,
+                detector,
+                tracker,
+                risk_evaluator,
+                alert_manager,
+                delay,
+                writer,
+                output_path,
+                stats,
+                start_time,
+            )
 
             print_summary(
                 frame_count, start_time, tracker, risk_evaluator, alert_manager, stats

@@ -44,7 +44,10 @@ vehicule-autonome-detection/
 │
 ├── data/
 │   ├── videos/            # Vidéos de test (à fournir)
-│   └── images/            # Images de test (à fournir)
+│   └── images/
+│       ├── cars/          # Images de test pour les voitures
+│       ├── pietons/       # Images de test pour les piétons
+│       └── pothole/       # Images de test pour les nids-de-poule
 │
 ├── models/                # Modèles YOLO locaux (non versionnés)
 │
@@ -69,7 +72,9 @@ vehicule-autonome-detection/
 │   └── presentation/      # HUD et composants d'affichage
 │
 ├── tests/                 # Tests unitaires
-└── outputs/               # Vidéos annotées générées avec --save
+└── outputs/
+    ├── pothole-tests/     # Résultats du modèle spécialisé nids-de-poule
+    └── yolov8-tests/      # Résultats du modèle YOLOv8 général
 ```
 
 Les modules historiques (`detector.py`, `risk_evaluator.py`, `hud.py` et
@@ -173,25 +178,55 @@ models\yolov8n.pt
 
 Vous n'avez pas besoin de passer `--model` pour le modèle par défaut. Pour
 utiliser un modèle entraîné différent, placez son fichier `.pt` non vide dans
-`models\` et indiquez son chemin. Le modèle de nids-de-poule du projet sera
-nommé `pothole.pt` :
+`models\` et indiquez son chemin.
+
+Le modèle spécialisé nids-de-poule peut être téléchargé depuis Hugging Face :
 
 ```powershell
-python -m src.main --source data/videos/route.mp4 --model models\pothole.pt
+curl.exe -L --fail -o models\pothole.pt `
+  "https://huggingface.co/peterhdd/pothole-detection-yolov8/resolve/main/best.pt"
 ```
 
 Les poids ne sont pas versionnés par Git (`.gitignore`). Si
 `models\yolov8n.pt` est absent, l'application demande à Ultralytics de
 télécharger le modèle par défaut directement à cet emplacement au premier
 lancement. Le modèle général pré-entraîné ne reconnaît pas nécessairement les
-nids-de-poule : le fichier `models\yolov8n.pt` fourni contient les 80 classes
+nids-de-poule : `yolov8n.pt` contient les 80 classes
 COCO, et aucune classe nid-de-poule. Les animaux courants (oiseau, chat, chien,
 cheval, mouton, vache, éléphant, ours, zèbre et girafe) sont présents dans ce
 modèle et filtrés comme catégorie `animal`.
 
 Le nom de classe du modèle doit être `pothole`, `potholes`, `nid de poule`,
 `nid-de-poule` ou `nid_de_poule` (la casse est ignorée). Le dépôt ne contient
-pas de jeu d'images annotées ni de poids entraînés pour les nids-de-poule.
+pas les poids spécialisés avant leur téléchargement. Le modèle téléchargé
+ci-dessus expose sa classe sous le nom numérique `0` ; cette classe est aussi
+reconnue automatiquement comme nid-de-poule.
+
+Pour tester les images déjà présentes :
+
+```powershell
+# Voitures et piétons : modèle général YOLOv8
+python -m src.main --source data\images\cars\image_1.png --model models\yolov8n.pt --imgsz 640
+python -m src.main --source data\images\pietons\image_1.png --model models\yolov8n.pt --imgsz 640
+
+# Nids-de-poule : modèle spécialisé
+python -m src.main --source data\images\pothole\pth_image_1.png --model models\pothole.pt --imgsz 640
+```
+
+Utilisez `q` ou Échap pour fermer la fenêtre après chaque image. Les formats
+PNG, JPG, JPEG, BMP, WebP et GIF sont pris en charge. Les PNG et JPG sont
+traités comme une seule frame ; les GIF sont décodés frame par frame avec
+Pillow. Pour traiter plusieurs images dans une même exécution, utilisez un
+script Ultralytics ou ajoutez vos propres images dans `data\images\`.
+
+Pour conserver une image annotée, ajoutez `--save` :
+
+```powershell
+python -m src.main --source data\images\pothole\pth_image_1.png --model models\pothole.pt --imgsz 640 --save
+```
+
+L'image reste affichée jusqu'à la fermeture de la fenêtre ou jusqu'à l'appui
+sur `q` / Échap. Le fichier JPG annoté est enregistré dans `outputs\`.
 
 ### 5.3 Entraîner le modèle de nids-de-poule
 
@@ -300,6 +335,22 @@ data\videos\route.mp4
 ```
 
 Pour évaluer le suivi et le risque, privilégiez une vidéo dashcam normale.
+
+### Tester les images disponibles
+
+Les dossiers `data\images\cars\`, `data\images\pietons\` et
+`data\images\pothole\` peuvent être utilisés pour vérifier séparément les
+classes. Une image par modèle est suffisante pour le test manuel :
+
+| Test | Modèle | Commande |
+|---|---|---|
+| Voiture | `yolov8n.pt` | `python -m src.main --source data\images\cars\image_1.png --model models\yolov8n.pt --imgsz 640` |
+| Piéton | `yolov8n.pt` | `python -m src.main --source data\images\pietons\image_1.png --model models\yolov8n.pt --imgsz 640` |
+| Nid-de-poule | `pothole.pt` | `python -m src.main --source data\images\pothole\pth_image_1.png --model models\pothole.pt --imgsz 640` |
+
+Les sorties annotées obtenues pendant les essais peuvent être conservées dans
+`outputs\yolov8-tests\` pour les voitures et piétons, et dans
+`outputs\pothole-tests\` pour les nids-de-poule.
 
 ### 5.4 Commande minimale
 
@@ -550,7 +601,7 @@ python -m unittest tests.test_alerts.AlertManagerTests.test_critical_is_immediat
 ### Résultat attendu
 
 ```text
-Ran 80 tests in ...
+Ran 95 tests in ...
 OK
 ```
 
@@ -565,7 +616,9 @@ La suite couvre :
 - `test_main.py` : transmission des arguments au point d'entrée principal.
 
 Les tests simulent les sources vidéo et les modèles ; ils ne valident pas
-l'ouverture réelle d'une caméra ni la qualité du modèle YOLO.
+l'ouverture réelle d'une caméra, les GIF éventuels ni la qualité du modèle
+YOLO. Le test manuel des images permet de vérifier les résultats réels avec
+les poids téléchargés.
 
 ---
 
@@ -576,6 +629,15 @@ Depuis la racine du dépôt, avec l'environnement virtuel activé :
 ```powershell
 # Tests unitaires
 python -m unittest discover -s tests -v
+
+# Tests visuels d'une voiture
+python -m src.main --source data\images\cars\image_1.png --model models\yolov8n.pt --imgsz 640
+
+# Tests visuels d'un piéton
+python -m src.main --source data\images\pietons\image_1.png --model models\yolov8n.pt --imgsz 640
+
+# Test visuel d'un nid-de-poule
+python -m src.main --source data\images\pothole\pth_image_1.png --model models\pothole.pt --imgsz 640
 
 # Détection en direct depuis la caméra par défaut (q ou Échap pour quitter)
 python -m src.main --source 0 --alerts --imgsz 320
