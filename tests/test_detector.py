@@ -147,6 +147,15 @@ class DetectorTests(unittest.TestCase):
 
         self.assertEqual(detections[0].category, "nid_de_poule")
 
+    def test_numeric_pothole_model_class_is_recognized(self):
+        boxes = [[0, 0, 10, 10, 0.9, 0]]
+        detector, model = make_detector(boxes, {0: "0"})
+
+        detections = detector.detect(np.zeros((20, 20, 3), dtype=np.uint8))
+
+        self.assertEqual(model.kwargs["classes"], [0])
+        self.assertEqual(detections[0].category, "nid_de_poule")
+
     def test_only_models_with_pothole_class_filter_in_that_class(self):
         detector, model = make_detector(
             np.empty((0, 6)),

@@ -46,12 +46,7 @@ ENV/
 # =========================
 # Données et médias (lourds)
 # =========================
-data/videos/*
-!data/videos/.gitkeep
-data/images/*
-!data/images/.gitkeep
-outputs/*
-!outputs/.gitkeep
+
 
 # Modèles YOLO (trop lourds pour GitHub)
 models/*.pt
